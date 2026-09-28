@@ -15,6 +15,7 @@ from the learner: a learner sees only its own chosen actions and rewards.
 """
 
 from dataclasses import dataclass
+import hashlib
 
 import numpy as np
 
@@ -80,7 +81,8 @@ class Environment:
     """Shared potential outcomes; no agent can access this object."""
 
     def __init__(self, kind, tasks, arms, seeds, drift_std=0.01, change_step=5000,
-                 reward_std=1.0, initialization=None, improvement_gap=0.5):
+                 reward_std=1.0, initialization=None, improvement_gap=0.5,
+                 reward_offset=0.0):
         self.kind = kind
         self.drift_std = drift_std
         self.reward_std = reward_std
@@ -95,6 +97,8 @@ class Environment:
             raise ValueError("initialization must be 'zeros' or 'normal'")
         self.q = (np.zeros((tasks, arms)) if initialization == "zeros"
                   else initial_rng.normal(size=(tasks, arms)))
+        if reward_offset:
+            self.q += reward_offset
         if kind in ("unchanged", "hidden_improvement"):
             # Chosen from the INITIAL world, never from any learner's behavior.
             self.target = self.q.argmin(axis=1)
@@ -137,7 +141,11 @@ def make_seeds(master, experiment_id, methods):
            "alpha=0.3": 206, "greedy alpha=0.1": 300,
            "optimistic greedy": 301, "UCB sample average": 302,
            "UCB alpha=0.1 (variant)": 303,
-           "optimistic epsilon=0.01": 304, "optimistic epsilon=0.1": 305}
+           "optimistic epsilon=0.01": 304, "optimistic epsilon=0.1": 305,
+           "gradient eta=0.1 running baseline": 400,
+           "gradient eta=0.4 running baseline": 401,
+           "gradient eta=0.1 zero baseline": 402,
+           "gradient eta=0.4 zero baseline": 403}
     return {"environment": environment,
             "agents": {m.name: seed(ids[m.name]) for m in methods}}
 
@@ -181,7 +189,7 @@ class TargetVisits:
                 self.last_window[method] += hit
 
 
-def simulate(config, methods, seeds):
+def simulate(config, methods, seeds, gradient=False):
     """Run all methods on each shared world; retain aggregates and task 0.
 
     Metrics order: reward, optimal-action indicator, cumulative pseudo-regret.
@@ -194,8 +202,13 @@ def simulate(config, methods, seeds):
                       config["drift_std"], config["change_step"],
                       reward_std=config.get("reward_std", 1.0),
                       initialization=config.get("initialization"),
-                      improvement_gap=config.get("improvement_gap", 0.5))
-    agents = [Agent(tasks, arms, m, seeds["agents"][m.name]) for m in methods]
+                      improvement_gap=config.get("improvement_gap", 0.5),
+                      reward_offset=config.get("reward_offset", 0.0))
+    agent_type = Agent
+    if gradient:
+        from gradient_bandits import GradientAgent
+        agent_type = GradientAgent
+    agents = [agent_type(tasks, arms, m, seeds["agents"][m.name]) for m in methods]
     rows = np.arange(tasks)
     visits = None
     if config["kind"] in ("unchanged", "hidden_improvement"):
@@ -217,9 +230,20 @@ def simulate(config, methods, seeds):
                        post_all=(change, steps))
     window_totals = np.zeros((len(methods), len(windows), tasks, 3))
     trace_q_true = np.zeros((steps, arms))
-    trace_estimates = np.zeros((len(methods), steps, arms))
+    trace_parameters = np.zeros((len(methods), steps, arms))
     trace_actions = np.zeros((len(methods), steps), dtype=np.int16)
     trace_rewards = np.zeros((len(methods), steps))
+    if gradient:
+        initial_q = env.q.copy()
+        target = initial_q.argmin(axis=1)  # Evaluator only, also for stationary A.
+        trace_probabilities = np.zeros_like(trace_parameters)
+        trace_baselines = np.zeros((len(methods), steps))
+        policy_mean = np.zeros((*bin_shape[:2], 2))
+        policy_sem = np.zeros_like(policy_mean)
+        policy_totals = np.zeros((len(methods), tasks, 2))
+        snapshot_steps = config.get("policy_snapshot_steps", [0, steps - 1])
+        snapshots = np.zeros((len(methods), len(snapshot_steps), tasks, 2))
+        action_hashes = [hashlib.sha256() for _ in methods]
 
     for t in range(steps):
         env.before_action(t)
@@ -229,8 +253,19 @@ def simulate(config, methods, seeds):
                           if start <= t < stop]
         bin_end = (t + 1) % width == 0 or t == steps - 1
         for i, agent in enumerate(agents):
-            trace_estimates[i, t] = agent.q[0]  # Before observing this reward.
+            trace_parameters[i, t] = (agent.preferences[0] if gradient else agent.q[0])
             actions = agent.act()
+            if gradient:
+                pi = agent.probabilities  # Pre-update policy, available to evaluator.
+                log_pi = np.zeros_like(pi)
+                np.log(pi, out=log_pi, where=pi > 0)
+                entropy = -(pi * log_pi).sum(axis=1)  # 0 log 0 = 0, no policy floor.
+                policy = np.column_stack((entropy, pi[rows, target]))
+                policy_totals[i] += policy
+                if t in snapshot_steps:
+                    snapshots[i, snapshot_steps.index(t)] = policy
+                trace_probabilities[i, t] = pi[0]
+                action_hashes[i].update(actions.astype("<i2").tobytes())
             if visits is not None:
                 visits.record(i, t, actions)
             rewards = rewards_for_all_actions[rows, actions]
@@ -247,9 +282,15 @@ def simulate(config, methods, seeds):
                 binned = np.column_stack((bin_totals[i] / bin_length, cumulative[i]))
                 bin_mean[i, t // width], bin_sem[i, t // width] = mean_sem(binned)
                 bin_totals[i] = 0
+                if gradient:
+                    policy_mean[i, t // width], policy_sem[i, t // width] = mean_sem(
+                        policy_totals[i] / bin_length)
+                    policy_totals[i] = 0
             trace_actions[i, t] = actions[0]
             trace_rewards[i, t] = rewards[0]
             agent.learn(actions, rewards)
+            if gradient:
+                trace_baselines[i, t] = agent.baseline[0]  # Includes current reward.
         # Drift follows reward, scoring, and learning, including at the last step.
         env.after_interaction()
         if (t + 1) % 1000 == 0:
@@ -267,9 +308,18 @@ def simulate(config, methods, seeds):
         bin_ends=ends, window_names=np.array(list(windows)),
         window_bounds=np.array(list(windows.values())), task_windows=window_totals,
         trace_task=np.array(0), trace_q_true=trace_q_true,
-        trace_estimates=trace_estimates, trace_actions=trace_actions,
+        trace_actions=trace_actions,
         trace_rewards=trace_rewards,
     )
+    if gradient:
+        data.update(trace_preferences=trace_parameters, trace_probabilities=trace_probabilities,
+                    trace_baselines_used=trace_baselines, initial_q=initial_q,
+                    target_arms=target, policy_metric_names=np.array(["entropy_nats", "target_probability"]),
+                    policy_bin_mean=policy_mean, policy_bin_sem=policy_sem,
+                    policy_snapshot_steps=np.array(snapshot_steps), task_policy_snapshots=snapshots,
+                    action_sha256=np.array([h.hexdigest() for h in action_hashes]))
+    else:
+        data["trace_estimates"] = trace_parameters
     if visits is not None:
         data.update(initial_q=initial_q, target_arms=visits.target,
                     target_pre_visits=visits.pre, target_first_delay=visits.first_delay,

@@ -12,6 +12,11 @@ it retains ordinary lifetime counts.
 The source file's copyright and modification-permission declaration is
 preserved at the top of `bandits.py`.
 
+`gradient_bandits.py` adapts the reference's Section 2.8 softmax preference
+update and current-reward-inclusive running baseline. It retains the same
+authors' declaration. Our implementation uses stable softmax and vectorized
+categorical sampling, and keeps preferences separate from action-value estimates.
+
 The reference repository's [LICENSE](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction/blob/master/LICENSE)
 is reproduced below for the adapted material:
 

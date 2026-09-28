@@ -4,8 +4,8 @@
 
 This small NumPy experiment studies ten-armed bandits from Sutton and Barto,
 *Reinforcement Learning: An Introduction*, second edition, Chapter 2. A learner
-chooses one of ten actions, receives a noisy reward, and updates its estimate
-of that action's value. The aim is to understand the code and the evidence,
+chooses one of ten actions, receives a noisy reward, and updates either action
+values or action preferences. The aim is to understand the code and the evidence,
 including where a simple learning rule fails.
 
 **First experiments:** forgetting helped when values changed, but the amount
@@ -35,6 +35,22 @@ exposure from learning. Optimistic greedy did not revisit the target in 79.9%
 of tasks during the post-change horizon. Epsilon 0.01 brought almost universal
 exposure but no clear primary-regret improvement; epsilon 0.1 reduced regret
 while imposing a larger reward cost in the unchanged world.
+
+The [gradient-bandit follow-up](#gradient-bandits-do-policies-remain-adaptable-after-becoming-confident)
+adds Section 2.8's direct policy learning. A running reward baseline removes
+sensitivity to a matched +4 reward offset, but does not preserve exploration:
+76%–94% of gradient learners never revisit the hidden opportunity, and all
+four tested settings have higher post-change regret than the saved
+constant-alpha epsilon-greedy and textbook UCB baselines.
+
+### Chapter progress
+
+| Chapter 2 topic | What we have implemented and investigated |
+| --- | --- |
+| Sections 2.1–2.4 | Ten-armed bandits, epsilon-greedy selection, incremental sample averages. |
+| Section 2.5 | Constant-step estimates; random walks and our drift–noise memory sweep. |
+| Sections 2.6–2.7 | Optimistic initialization and UCB; our permutation and hidden-opportunity comparisons. |
+| Section 2.8 | [Gradient bandits](#gradient-bandits-do-policies-remain-adaptable-after-becoming-confident), softmax preferences, and reward baselines; matched reward offsets and hidden opportunities. |
 
 ## Run it
 
@@ -75,7 +91,7 @@ affect what the agent learns, but the world's values evolve independently of
 those choices. Changing rewards alone do not turn this into a learned world
 model or a full state-based control problem.
 
-Action counts start at zero. Estimates start at zero except in the explicitly
+For action-value learners, counts start at zero. Estimates start at zero except in the explicitly
 optimistic learner below. An **epsilon-greedy** learner
 explores with probability $\epsilon$, choosing uniformly among all ten actions.
 Otherwise it chooses an action with the largest estimate, breaking exact ties
@@ -85,7 +101,7 @@ After choosing $A_t$ and receiving $R_t$, it increments $N(A_t)$ and updates
 only that action:
 
 $$
-Q_{t+1}(A_t) = Q_t(A_t) + \eta_t(A_t)\,[R_t-Q_t(A_t)].
+Q_{t+1}(A_t) = Q_t(A_t) + \beta_t(A_t)\,[R_t-Q_t(A_t)].
 $$
 
 The bracket is the prediction error: how surprising was the reward? The step
@@ -93,8 +109,8 @@ size determines how much that surprise changes the estimate.
 
 | Learner | Step size after incrementing the count | What it remembers |
 | --- | --- | --- |
-| Sample average | $\eta_t(a)=1/N(a)$ | Every observed reward for that action has equal weight. |
-| Constant step size | $\eta_t(a)=\alpha$ | Recent rewards receive more weight. |
+| Sample average | $\beta_t(a)=1/N(a)$ | Every observed reward for that action has equal weight. |
+| Constant step size | $\beta_t(a)=\alpha$ | Recent rewards receive more weight. |
 
 For one action, after $n$ observations, a constant step size gives
 
@@ -1157,6 +1173,338 @@ median status, and paired comparisons against optimistic greedy.
 [manifest.json](results/hidden_improvement/manifest.json) records configuration,
 seeds, versions, source hashes, runtime, and the subsequent figures-only redraw.
 
+## Gradient bandits: do policies remain adaptable after becoming confident?
+
+This follow-up implements **Section 2.8** and asks whether directly learning
+action probabilities keeps a learner open to a hidden opportunity. We also
+recreate the Figure 2.5 setting and test sensitivity to a constant reward
+offset. The offset pairing and hidden-opportunity study are **our extensions**.
+
+### Preferences, softmax, and the reward baseline
+
+The new learner starts with ten preferences $H_0(a)=0$. Before decision $t$,
+it computes a policy (a probability distribution over actions):
+
+$$
+\pi_t(a)=\frac{\exp(H_t(a)-m_t)}{\sum_b\exp(H_t(b)-m_t)},
+\qquad m_t=\max_b H_t(b), \qquad A_t\sim\pi_t.
+$$
+
+Subtracting the maximum prevents numerical overflow without changing the
+probabilities. Equal initial preferences give each arm probability 0.1. An
+action is sampled from the whole distribution, rather than chosen by an
+argmax. There is no epsilon mixing, probability floor, entropy bonus, or reset.
+
+After reward $R_t$, the running-baseline methods first update their own task's
+mean reward, **including the current reward**:
+
+$$
+b_t=b_{t-1}+\frac{R_t-b_{t-1}}{t+1}, \qquad b_{-1}=0.
+$$
+
+The zero-baseline methods instead keep $b_t=0$. All preferences then change
+simultaneously, using the probabilities from **before** this decision:
+
+$$
+H_{t+1}(a)=H_t(a)+\eta(R_t-b_t)
+\big[\mathbf{1}\{a=A_t\}-\pi_t(a)\big].
+$$
+
+A reward above the baseline increases the selected action's preference and
+decreases the others; a reward below it reverses that direction. The running
+baseline makes the first update zero because its first mean equals its first
+reward. Each task has its own baseline; rewards are never pooled across tasks.
+
+**Preferences are not expected-reward estimates.** Only their differences
+matter to softmax. The preference step size $\eta$ controls policy changes;
+our earlier action-value $\alpha$ controls how rewards update an estimate of
+one arm's mean. Epsilon independently controls random exploration in the
+earlier epsilon-greedy learners. None of these three parameters is interchangeable.
+
+The connection to **policy gradients** is concrete:
+$\nabla_H\log\pi_t(A_t)=\mathrm{one\_hot}(A_t)-\pi_t$.
+Multiplying this direction by a centered reward adjusts the policy toward
+higher expected reward. An action-independent baseline can reduce update
+variance without changing the expected direction. With the textbook's
+current-inclusive convention, $R_t-b_t=\frac{t}{t+1}(R_t-b_{t-1})$:
+the first update vanishes and later expected directions have this extra scale
+factor. This is a tabular, one-step policy-gradient example. It has no neural
+network, language tokens, or language-model training pipeline.
+
+| ID | Preference step size | Reward baseline |
+| --- | --- | --- |
+| G1 | $\eta=0.1$ | Current-inclusive running average |
+| G2 | $\eta=0.4$ | Current-inclusive running average |
+| G3 | $\eta=0.1$ | Fixed zero |
+| G4 | $\eta=0.4$ | Fixed zero |
+
+### Matched design and measurements
+
+**A: reward offsets.** Two conditions each use 2,000 tasks, ten arms, and
+1,000 decisions. Start from the same independent $z(a)\sim N(0,1)$ and use
+either $q(a)=z(a)$ or $q(a)=z(a)+4$, with reward-noise standard deviation 1.
+The +4 condition is the Figure 2.5 setup. Initial draws, potential reward-noise
+draws, and per-method action-sampling streams match across offsets.
+
+Adding four changes neither the best arm nor any true-value gap. A running
+reward baseline shifts by four too, so the centered reward and policy update
+are invariant in exact arithmetic. A fixed zero baseline does not cancel the
+shift: it adds a noisy policy-update term even though the ranking is unchanged.
+
+**B: hidden opportunity.** Both conditions use 2,000 tasks and 10,000
+decisions, with initial values $N(0,1)$ and reward-noise standard deviation 1.
+The control stays unchanged. In the improvement condition, the initially worst
+arm becomes the initial maximum plus 0.5 **before decision 5,000**; every other
+arm stays fixed. The evaluator selects the target from initial values. Agents
+see only their own actions and rewards, without the target or a change signal.
+
+We reuse **experiment 7's environment seeds** and the original task order from
+[`results/hidden_improvement/`](results/hidden_improvement/). Saved baselines
+are **E**, epsilon-greedy with $\epsilon=0.1$, action-value $\alpha=0.1$, and
+$Q_0=0$, and **U**, textbook UCB with $c=2$ and sample-average estimates.
+We checked configuration, method settings, environment and old learner seeds,
+NumPy version, all initial task values and target IDs, and the recorded world
+trajectory. Those baselines were loaded, not simulated again. New gradient
+streams use stable method IDs 400–403; existing IDs and defaults are preserved.
+Within each condition, methods share potential rewards. Across each matched
+pair, each method also keeps its own random stream.
+
+The primary B outcome is mean dynamic pseudo-regret per decision on
+$[5000,10000)$. We also save first-post-1,000 regret, final-1,000 reward and
+optimal frequency, total regret, target visits, and first-visit delays. Delay
+zero means selecting the target at decision 5,000. A delay of `-1` is censored,
+not a negative time. Exposure within $k$ decisions means delay $<k$.
+
+Intervals use **2,000 independent tasks**, not time steps: means have
+pointwise 95% intervals of mean ± 1.96 task SEM; visit proportions use Wilson
+intervals. Comparisons subtract outcomes within each shared task before
+computing uncertainty. They are exploratory and unadjusted for multiple
+comparisons. Policy curves average within each task's time bin before SEMs
+are computed. Entropy is $-\sum_a\pi_t(a)\log\pi_t(a)$, with $0\log0=0$;
+zero means a deterministic policy and $\log10$ a uniform policy. Low entropy
+describes concentration of choices, not calibrated knowledge of the world.
+
+### A: the baseline removes offset sensitivity, not every learning failure
+
+These are new simulations at the textbook settings, not digitized textbook
+curves. Total regret is over all 1,000 decisions; percentages in the final two
+columns average decisions $[900,1000)$.
+
+| Method | Total regret, offset 0 (95% CI) | Total regret, offset +4 (95% CI) | Final optimal %, offset 0 | Final optimal %, offset +4 |
+| --- | ---: | ---: | ---: | ---: |
+| G1 | 185.6 [182.0, 189.2] | 185.6 [182.0, 189.2] | 84.45 | 84.45 |
+| G2 | **152.4 [142.1, 162.7]** | **152.4 [142.1, 162.7]** | 73.33 | 73.33 |
+| G3 | 188.5 [183.7, 193.2] | 452.0 [431.9, 472.1] | 82.97 | 50.66 |
+| G4 | 165.5 [154.7, 176.3] | 785.4 [754.3, 816.4] | 68.13 | 27.69 |
+
+For G1 and G2, hashes of **all task action sequences** match across offsets.
+Optimal frequencies are identical, regret differs only by floating-point
+roundoff, and mean rewards increase by four: G1 **1.355→5.355**, G2
+**1.388→5.388**. With a zero baseline the shift increases total regret by
+**263.5 [243.8, 283.2]** for G3 and **619.9 [587.8, 652.0]** for G4, using
+paired task differences. Their mean rewards are **1.352→5.089** and
+**1.375→4.755**: more reward units do not mean better choices.
+
+At zero offset, evidence for a baseline advantage in **total 1,000-decision
+regret** is weak: G3−G1 is **2.9 [−2.9, 8.7]** and G4−G2 is
+**13.1 [−1.7, 27.9]**. The baseline's large benefit under +4 does not establish
+an equally large benefit under every reward distribution.
+
+G2 has lower total regret than G1 by **33.2 [22.4, 44.0]**, but G1 has better
+late performance: final-100 regret per decision is **0.0344** versus **0.0950**.
+The curves show the larger step's early gains and the smaller step's better
+later choices. Total regret, late performance, and optimal-action frequency
+answer different questions; choosing a nearly best action counts as a full
+mistake for optimal frequency but incurs only its small value gap in regret.
+
+![Textbook setup and matched reward offsets](results/gradient_bandits/textbook_offsets.png)
+
+### B: direct policy learning did not improve hidden-opportunity adaptation
+
+Primary regret per decision over $[5000,10000)$, with task-level 95% intervals:
+
+| Method | Unchanged world | Hidden improvement |
+| --- | ---: | ---: |
+| G1 | 0.0174 [0.0147, 0.0202] | 0.5173 [0.5145, 0.5200] |
+| G2 | 0.0625 [0.0552, 0.0698] | 0.5618 [0.5546, 0.5689] |
+| G3 | 0.0234 [0.0198, 0.0269] | 0.5232 [0.5197, 0.5267] |
+| G4 | 0.0906 [0.0812, 0.1001] | 0.5893 [0.5798, 0.5987] |
+| E: epsilon-greedy, saved | 0.1760 [0.1741, 0.1778] | **0.2955 [0.2926, 0.2985]** |
+| U: textbook UCB, saved | **0.0083 [0.0080, 0.0086]** | 0.4118 [0.4048, 0.4188] |
+
+All four gradient settings have higher hidden-improvement regret than both
+saved baselines. The paired differences below are **gradient minus reference**;
+positive values favor the reference.
+
+| Method | Difference vs E (95% CI) | Difference vs U (95% CI) |
+| --- | ---: | ---: |
+| G1 | +0.2217 [0.2176, 0.2259] | +0.1055 [0.0979, 0.1130] |
+| G2 | +0.2662 [0.2586, 0.2739] | +0.1500 [0.1400, 0.1599] |
+| G3 | +0.2276 [0.2230, 0.2323] | +0.1114 [0.1036, 0.1192] |
+| G4 | +0.2937 [0.2840, 0.3035] | +0.1775 [0.1659, 0.1891] |
+
+In the unchanged control, G1 saves **0.1585 [0.1552, 0.1619]** regret per
+decision relative to E, but incurs **0.0092 [0.0064, 0.0119]** more than U.
+Concentrating choices pays off in a stable world; it does not ensure that the
+agent notices a new alternative. Among the four gradient settings, G1 has
+the lowest primary regret in both worlds. Increasing eta to 0.4 did not help
+adaptation: G2−G1 is **+0.0445 [0.0369, 0.0521]** after improvement.
+
+Secondary outcomes in the hidden-improvement condition:
+
+| Method | First-post-1,000 regret | Total 10,000-decision regret | Final-1,000 reward (95% CI) | Final optimal action % |
+| --- | ---: | ---: | ---: | ---: |
+| G1 | 518.4 | 2866.1 | 1.522 [1.495, 1.548] | 0.0054 |
+| G2 | 564.1 | 3246.1 | 1.479 [1.452, 1.506] | 0.0516 |
+| G3 | 524.3 | 2920.9 | 1.516 [1.489, 1.542] | 0.0050 |
+| G4 | 592.6 | 3498.5 | 1.452 [1.425, 1.478] | 0.2247 |
+| E | 606.1 | 2467.1 | 1.858 [1.833, 1.882] | 88.74 |
+| U | 484.5 | 2292.9 | 1.687 [1.661, 1.714] | 30.57 |
+
+E has lower primary post-change regret, whereas U has lower **whole-run**
+regret. E also incurs more regret than G1 during the first 1,000 post-change
+decisions before its later gains. We have not measured a fastest recovery
+time or established a universally superior algorithm family.
+
+![Adaptation compared with saved action-value learners](results/gradient_bandits/adaptation.png)
+
+The gradient reward curves barely change after the intervention, while their
+optimal frequency drops to almost zero and regret begins rising steeply.
+Nothing happened to the payoff from the old favorite; the missed improvement
+is visible to the evaluator, not automatically to the learner.
+
+### Exposure is rare, and exposure alone is insufficient
+
+Percent of tasks with at least one target visit within each post-change horizon:
+
+| Method | 100 decisions | 500 | 1,000 | 5,000 | Still unvisited at end, % (95% CI) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| G1 | 0.85 | 4.15 | 6.85 | 23.60 | 76.40 [74.49, 78.21] |
+| G2 | 0.15 | 1.20 | 2.25 | 7.05 | 92.95 [91.74, 93.99] |
+| G3 | 0.75 | 3.45 | 6.70 | 22.70 | 77.30 [75.41, 79.08] |
+| G4 | 0.00 | 0.65 | 1.60 | 5.95 | 94.05 [92.93, 95.00] |
+| E | 63.50 | 99.50 | 100.00 | 100.00 | 0.00 [0.00, 0.19] |
+| U | 1.25 | 5.50 | 9.80 | 33.70 | 66.30 [64.20, 68.34] |
+
+The median first-visit delay is **not reached within 5,000 decisions** for
+G1–G4 and U; E's is **67 decisions**. No mean computed only from observed
+visits is presented as a population mean. First-visit delays match exactly
+between unchanged and improvement conditions: until a first target visit,
+each learner receives identical rewards in the paired worlds.
+
+![Censored first exposure](results/gradient_bandits/exposure.png)
+
+The initially worst arm was already neglected before the change. Mean visits
+during the first 5,000 decisions are **8.55 [8.41, 8.68]**, **2.63 [2.57, 2.69]**,
+**8.14 [7.99, 8.28]**, and **2.21 [2.15, 2.27]** for G1–G4, versus **50.13** for
+E and **4.81** for U. The gradient methods' median counts are 8, 2, 8, and 2.
+
+After improvement, target-selection percentages in the **first→last 1,000**
+decisions are **0.0073→0.0054**, **0.0022→0.0516**, **0.0073→0.0050**, and
+**0.0066→0.2247** for G1–G4. E changes **7.16→88.74%**, U **4.98→30.57%**.
+Thus G1's 23.6% exposure rate is not a 23.6% learning-success rate. The new
+arm is selected on almost none of its final decisions, even after some
+learners have received its improved reward.
+
+### What the probabilities reveal
+
+The target probabilities below are snapshots **before** decisions 5,000 and
+9,999. They are probabilities, not percentages.
+
+| Method | Mean target probability at 5,000 | Median at 5,000 | Mean at 9,999 | Median at 9,999 |
+| --- | ---: | ---: | ---: | ---: |
+| G1 | 0.0000793 | 0.0000660 | 0.0000458 | 0.0000370 |
+| G2 | 0.0000224 | 0.0000125 | 0.0005161 | 0.00000678 |
+| G3 | 0.0000764 | 0.0000659 | 0.0000489 | 0.0000361 |
+| G4 | 0.0000194 | 0.0000152 | 0.0025190 | 0.00000802 |
+
+Mean entropies at decision 5,000 are **0.0233, 0.00661, 0.0231, 0.00553 nats**,
+far below the initial uniform policy's $\log10\approx2.303$. The gradient
+policies are highly concentrated before the opportunity appears. Softmax
+sampling remains stochastic but provides no useful lower bound on how often
+an ignored arm is revisited within a finite horizon.
+
+![Population policy probabilities and entropy](results/gradient_bandits/policy_probabilities.png)
+
+G2 and G4's rising mean target probabilities conceal very few successful
+tasks. Only **1 of 2,000 G2 tasks** and **4 of 2,000 G4 tasks** select the target
+on more than half of the final 1,000 decisions; G1 and G3 have none. Their
+typical target probabilities actually shrink, as the medians show. Normal
+mean ± 1.96 SEM intervals can cross zero for such sparse outcomes; the JSON
+keeps those untruncated intervals and task quantiles. They should not be read
+as precise descriptions of a typical task. The visit proportions instead
+have bounded Wilson intervals.
+
+**Interpretation:** a rarely sampled action supplies very few opportunities
+for a strong positive update. Changes to unchosen preferences are also
+weighted by their small probabilities. This mechanism is consistent with the
+recorded probabilities, exposure, and selection frequencies. We have not
+isolated the contribution of each mechanism by a separate intervention, and
+a running baseline's offset invariance does not guarantee adaptability.
+
+![Fixed task 0 preferences and probabilities](results/gradient_bandits/task0_policy.png)
+
+In fixed task 0, target arm 8 improves while arm 0 was initially best. G3 first
+revisits the target at delay **918** (decision 5,918), yet its target probability
+ends near **0.00010**. G1, G2, and G4 never revisit it after the change. G2
+assigns it only about **0.000000875** probability at decision 5,000. This is
+practical neglect during our horizon, without any imposed probability floor
+or claim that its mathematical probability is zero. G1 and G4 concentrate on
+other arms, shown as the remaining probability mass; even the initially best
+arm need not be their favorite. Preferences in the right panels are policy
+parameters, not estimates that should track the arm's true reward.
+
+### Reproduction, runtime, and saved outputs
+
+Run just this follow-up from the repository root:
+
+```bash
+source .venv/bin/activate
+python gradient_checks.py
+python run_gradient_bandits.py
+# Regenerate figures from saved data; do not simulate learners again:
+python run_gradient_bandits.py --plot-only
+```
+
+The full run on 2026-09-28 used **176 million new learner–environment
+interactions** and took **110.77 seconds**, including saving and plotting.
+Simulation times were **4.53 s**, **4.35 s**, **45.41 s**, and **49.12 s** for
+offset 0, offset +4, unchanged, and hidden improvement. The manifest also
+records a later figures-only redraw. NumPy was **1.26.4**, Python **3.10.12**,
+and Matplotlib **3.10.9**. The commands overwrite only this follow-up's output
+directory; `--output PATH` selects another. No previous experiment was rerun;
+SHA-256 checks confirmed all **72 earlier result files** were unchanged.
+
+[gradient_bandits.py](gradient_bandits.py) contains the preference learner;
+[run_gradient_bandits.py](run_gradient_bandits.py) sets up and summarizes the
+four conditions using the existing vectorized time loop;
+[gradient_figures.py](gradient_figures.py) draws the figures. The brief checks
+cover stable softmax, categorical sampling, simultaneous updates, per-task
+baselines, timing, and offset cancellation. Recorded task-0 updates were also
+reconstructed from the saved pre-update policies, rewards, and baselines.
+
+[`results/gradient_bandits/`](results/gradient_bandits/) contains four compact
+`.npz` files, their JSON summaries, an offset comparison, a manifest, and five
+figures (about **17.5 MiB** in total). Task outcomes use axes **method × task ×
+outcome**, with labels in each archive. B retains censored first-delay records,
+target counts, and the same outcome definitions as the saved baselines.
+`task_policy_snapshots` stores task-level entropy and target probability at
+selected decisions; `policy_bin_mean` and `policy_bin_sem` summarize their
+curves. `trace_preferences` and `trace_probabilities` are **pre-decision**
+task-0 arrays; `trace_baselines_used` includes that decision's reward, saved in
+`trace_rewards`. No task-by-time-by-action history is stored for the population.
+
+The [manifest](results/gradient_bandits/manifest.json) records configuration,
+all streams, runtime, source hashes, and hashes of the reused baseline files.
+The [offset comparison](results/gradient_bandits/offset_comparison.json)
+contains paired offset effects and action-sequence equality checks. Each B
+summary includes task-level paired differences against **both** saved methods
+and gradient-setting contrasts. [Hidden-improvement results](results/gradient_bandits/hidden_improvement_summary.json)
+and [unchanged results](results/gradient_bandits/unchanged_summary.json) retain
+uncertainty for every reported outcome, beyond the abbreviated tables here.
+
+## Read the code and saved results
+
 ## Read the code and saved results
 
 Start with [bandits.py](bandits.py): `Agent.act` selects actions and `Agent.learn`
@@ -1217,26 +1565,30 @@ Occasional exploration revisits patches that used to look unpromising.
 
 This is a bandit analogy. There is no movement, depletion caused by visits,
 energy budget, reproduction, competition, or evolving population. It is not
-already an artificial life system. The learner stores action-value estimates;
-it does not learn a world model or predict environmental transitions. Here the
+already an artificial life system. The learner stores action-value estimates
+or, in Section 2.8, action preferences; it does not learn a world model or
+predict environmental transitions. Here the
 world changes independently of the learner's choices.
 
 ## One next scientific question
 
-**Does epsilon 0.01 become worthwhile when the new opportunity lasts longer?**
-Keep the matched unchanged and hidden-improvement worlds, but compare post-change
-horizons of 5,000, 10,000, and 50,000 decisions. Measure regret per decision,
-target selection, and censored exposure over each horizon. Rare exploration
-may need more time to supply enough learning updates, while its ongoing cost
-is lower than epsilon 0.1. Whether that eventually changes the ranking is a
-hypothesis to test, not a conclusion from the present run.
+**Does a longer stable history make gradient learners less able to discover
+the same new opportunity?** Keep the improvement size and 5,000-decision
+post-change horizon fixed, but introduce the opportunity after 500, 5,000, or
+50,000 stable decisions. Measure target probability at the change, censored
+exposure, subsequent selections, and regret, paired with unchanged controls.
+This would test whether time spent concentrating the policy predicts later
+neglect, without adding an exploration mechanism to the textbook algorithm.
+Changing the pre-change duration also changes baseline and preference history;
+it would not isolate entropy alone as the cause.
 
 ## Reference implementation and license
 
-We consulted Sections 2.6–2.7 of Sutton and Barto's second edition
+We consulted Sections 2.6–2.8 of Sutton and Barto's second edition
 ([book text](https://studylib.net/doc/27814306/reinforcement-learning--an-introduction))
-for optimism, UCB, and Figures 2.3–2.4. We consulted and adapted the
-epsilon-greedy, optimism, UCB, and incremental-update design of
+for optimism, UCB, gradient bandits, and Figures 2.3–2.5. We consulted and adapted the
+epsilon-greedy, optimism, UCB, incremental-update, and gradient-bandit design of
 [Shangtong Zhang's Chapter 2 implementation](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction/blob/master/chapter02/ten_armed_testbed.py).
-Its authors' declaration is retained at the top of `bandits.py`; the upstream
+Its authors' declaration is retained at the top of `bandits.py` and
+`gradient_bandits.py`; the upstream
 MIT license and attribution are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

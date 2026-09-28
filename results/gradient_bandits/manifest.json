@@ -1,0 +1,211 @@
+{
+  "started_utc": "2026-09-28T18:38:02.437998+00:00",
+  "master_seed": 20260928,
+  "methods": [
+    {
+      "name": "gradient eta=0.1 running baseline",
+      "eta": 0.1,
+      "running_baseline": true
+    },
+    {
+      "name": "gradient eta=0.4 running baseline",
+      "eta": 0.4,
+      "running_baseline": true
+    },
+    {
+      "name": "gradient eta=0.1 zero baseline",
+      "eta": 0.1,
+      "running_baseline": false
+    },
+    {
+      "name": "gradient eta=0.4 zero baseline",
+      "eta": 0.4,
+      "running_baseline": false
+    }
+  ],
+  "python": "3.10.12",
+  "numpy": "1.26.4",
+  "matplotlib": "3.10.9",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "baseline_timing": "Running average includes current reward, before preference update",
+  "policy_timing": "All recorded H, probabilities, entropy are before the decision; recorded baseline includes its reward",
+  "intervals": "Task mean +/- 1.96 SEM; Wilson visit proportions; pointwise, unadjusted",
+  "censoring": "delay -1 means not visited within 5000 post-change decisions; null median means not reached",
+  "trace_selection": "task 0 fixed before examining results",
+  "action_hash": "SHA256 of step-major, task-order actions as little-endian int16; no action cube retained",
+  "saved_reference_files_sha256": {
+    "manifest.json": "c04e3bb583db88aa90ad83787655f15fa7d316827ac813448dfd2b3aea166779",
+    "unchanged.npz": "056e85124608f57f7001d169345fe35f7c620039afad4c96a61606736d99ba23",
+    "hidden_improvement.npz": "441a18058997752de3f93eb0a169a242eb3dda248a361d513b4e260f1d90c43a"
+  },
+  "saved_reference_methods": [
+    "alpha=0.1",
+    "UCB sample average"
+  ],
+  "source_sha256": {
+    "bandits.py": "f6c5266b140ecdbfdf2abb3e80834d867206e71c8403723b929dc189d8ff89e8",
+    "gradient_bandits.py": "08454f3dfdcca5164a029d07749c17cd384e501cd2f5f5b8a962983acc30a580",
+    "run_gradient_bandits.py": "b7ba7ffdb62a7498c353ca43c19d80a38c91e8ebaf6e71c300bff5da0862946c",
+    "gradient_figures.py": "cdd293827b1e1f040674899769ab9a08ff65c1498fa75783d4d87bd6dbb6f8ad",
+    "run_experiments.py": "2c6eb6d3b088737bedd57c9ee8f54f236c898a608be6d634cfbf48bb9701f911",
+    "run_exploration.py": "a3fea6b90fa3fbc768ded3cb3042ef9c10c74ef647b7e207bc396c4b23a65e3a",
+    "run_hidden_improvement.py": "1204cdf6fc8e016251b44f48951bf0afeead0fdc2204e1c04340a6be147aabe1"
+  },
+  "conditions": {
+    "offset_0": {
+      "config": {
+        "kind": "stationary",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 1000,
+        "bin_width": 10,
+        "drift_std": 0.0,
+        "change_step": 5000,
+        "initialization": "normal",
+        "reward_std": 1.0,
+        "improvement_gap": 0.5,
+        "reward_offset": 0,
+        "policy_snapshot_steps": [
+          0,
+          999
+        ]
+      },
+      "experiment_id": 8,
+      "seeds": {
+        "environment": {
+          "initial": 9948449228960057622,
+          "rewards": 8682894893123763805,
+          "drift": 12872449762821844276,
+          "permutation": 6589019072055191219
+        },
+        "agents": {
+          "gradient eta=0.1 running baseline": 11135190785303952954,
+          "gradient eta=0.4 running baseline": 17126244204811425574,
+          "gradient eta=0.1 zero baseline": 13842805308725820049,
+          "gradient eta=0.4 zero baseline": 15571330821919326750
+        }
+      },
+      "simulation_seconds": 4.527439448982477
+    },
+    "offset_4": {
+      "config": {
+        "kind": "stationary",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 1000,
+        "bin_width": 10,
+        "drift_std": 0.0,
+        "change_step": 5000,
+        "initialization": "normal",
+        "reward_std": 1.0,
+        "improvement_gap": 0.5,
+        "reward_offset": 4,
+        "policy_snapshot_steps": [
+          0,
+          999
+        ]
+      },
+      "experiment_id": 8,
+      "seeds": {
+        "environment": {
+          "initial": 9948449228960057622,
+          "rewards": 8682894893123763805,
+          "drift": 12872449762821844276,
+          "permutation": 6589019072055191219
+        },
+        "agents": {
+          "gradient eta=0.1 running baseline": 11135190785303952954,
+          "gradient eta=0.4 running baseline": 17126244204811425574,
+          "gradient eta=0.1 zero baseline": 13842805308725820049,
+          "gradient eta=0.4 zero baseline": 15571330821919326750
+        }
+      },
+      "simulation_seconds": 4.3450056000147015
+    },
+    "unchanged": {
+      "config": {
+        "kind": "unchanged",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 10000,
+        "bin_width": 100,
+        "drift_std": 0.0,
+        "change_step": 5000,
+        "initialization": "normal",
+        "reward_std": 1.0,
+        "improvement_gap": 0.5,
+        "reward_offset": 0.0,
+        "policy_snapshot_steps": [
+          0,
+          4999,
+          5000,
+          5999,
+          9999
+        ]
+      },
+      "experiment_id": 7,
+      "seeds": {
+        "environment": {
+          "initial": 11921976245313250942,
+          "rewards": 6978036093430855686,
+          "drift": 14579566855902043533,
+          "permutation": 6164445667278523480
+        },
+        "agents": {
+          "gradient eta=0.1 running baseline": 1030966720923988331,
+          "gradient eta=0.4 running baseline": 14611304041813252295,
+          "gradient eta=0.1 zero baseline": 5850172930107991834,
+          "gradient eta=0.4 zero baseline": 4613706989502110936
+        }
+      },
+      "simulation_seconds": 45.41214100597426
+    },
+    "hidden_improvement": {
+      "config": {
+        "kind": "hidden_improvement",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 10000,
+        "bin_width": 100,
+        "drift_std": 0.0,
+        "change_step": 5000,
+        "initialization": "normal",
+        "reward_std": 1.0,
+        "improvement_gap": 0.5,
+        "reward_offset": 0.0,
+        "policy_snapshot_steps": [
+          0,
+          4999,
+          5000,
+          5999,
+          9999
+        ]
+      },
+      "experiment_id": 7,
+      "seeds": {
+        "environment": {
+          "initial": 11921976245313250942,
+          "rewards": 6978036093430855686,
+          "drift": 14579566855902043533,
+          "permutation": 6164445667278523480
+        },
+        "agents": {
+          "gradient eta=0.1 running baseline": 1030966720923988331,
+          "gradient eta=0.4 running baseline": 14611304041813252295,
+          "gradient eta=0.1 zero baseline": 5850172930107991834,
+          "gradient eta=0.4 zero baseline": 4613706989502110936
+        }
+      },
+      "simulation_seconds": 49.12314749695361
+    }
+  },
+  "total_seconds": 110.76917247206438,
+  "finished_utc": "2026-09-28T18:39:54.853232+00:00",
+  "figure_redraw": {
+    "utc": "2026-09-28T18:41:16.961907+00:00",
+    "seconds": 6.0294525779318064,
+    "command": "python run_gradient_bandits.py --plot-only",
+    "source_sha256": "5650072d297c6e6c769802a92b09ee1d660ff1be33905594f749bfdc465a2a4c",
+    "reason": "Shorten task-0 preference labels and show remaining probability mass."
+  }
+}
