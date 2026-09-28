@@ -1,0 +1,181 @@
+{
+  "started_utc": "2026-09-28T16:04:41.768585+00:00",
+  "master_seed": 20260928,
+  "python": "3.10.12",
+  "numpy": "1.26.4",
+  "matplotlib": "3.10.9",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "rng": "NumPy default_rng / PCG64",
+  "methods": [
+    {
+      "name": "sample average",
+      "epsilon": 0.1,
+      "alpha": null,
+      "initial_estimate": 0.0,
+      "ucb_c": null
+    },
+    {
+      "name": "alpha=0.1",
+      "epsilon": 0.1,
+      "alpha": 0.1,
+      "initial_estimate": 0.0,
+      "ucb_c": null
+    },
+    {
+      "name": "greedy alpha=0.1",
+      "epsilon": 0.0,
+      "alpha": 0.1,
+      "initial_estimate": 0.0,
+      "ucb_c": null
+    },
+    {
+      "name": "optimistic greedy",
+      "epsilon": 0.0,
+      "alpha": 0.1,
+      "initial_estimate": 5.0,
+      "ucb_c": null
+    },
+    {
+      "name": "UCB sample average",
+      "epsilon": 0.0,
+      "alpha": null,
+      "initial_estimate": 0.0,
+      "ucb_c": 2.0
+    },
+    {
+      "name": "UCB alpha=0.1 (variant)",
+      "epsilon": 0.0,
+      "alpha": 0.1,
+      "initial_estimate": 0.0,
+      "ucb_c": 2.0
+    }
+  ],
+  "pairs": [
+    [
+      4,
+      3
+    ],
+    [
+      5,
+      1
+    ],
+    [
+      6,
+      2
+    ],
+    [
+      6,
+      5
+    ]
+  ],
+  "step_convention": "zero-based; pre-decision counts; change before t=5000",
+  "trace_selection": "task 0, chosen before inspecting results",
+  "raster_window": [
+    4500,
+    6500
+  ],
+  "ci": "mean +/- 1.96 * task sample SD / sqrt(tasks); paired within tasks",
+  "source_sha256": {
+    "bandits.py": "fd4cd3fea4a331f135c653d6ced1bcdbaad935366e39977ec64787d52ac1aed8",
+    "run_experiments.py": "2c6eb6d3b088737bedd57c9ee8f54f236c898a608be6d634cfbf48bb9701f911",
+    "run_exploration.py": "a3fea6b90fa3fbc768ded3cb3042ef9c10c74ef647b7e207bc396c4b23a65e3a",
+    "exploration_figures.py": "250568cac3145f12d3be89d0392085daa2c41e28bfffc9e094f115570fb35098"
+  },
+  "experiments": {
+    "stationary": {
+      "experiment_id": 4,
+      "config": {
+        "kind": "stationary",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 1000,
+        "bin_width": 10,
+        "drift_std": 0.01,
+        "reward_std": 1.0,
+        "change_step": 5000,
+        "initialization": "normal"
+      },
+      "seeds": {
+        "environment": {
+          "initial": 14575048851521391463,
+          "rewards": 2570034348218895766,
+          "drift": 17376262848029072279,
+          "permutation": 11228447619533981884
+        },
+        "agents": {
+          "sample average": 7474073401516705256,
+          "alpha=0.1": 1416329117147822659,
+          "greedy alpha=0.1": 7842068349632328894,
+          "optimistic greedy": 15518247049895505834,
+          "UCB sample average": 10095949636093340192,
+          "UCB alpha=0.1 (variant)": 1542160187885126278
+        }
+      },
+      "simulation_seconds": 4.886132373008877
+    },
+    "random_walk": {
+      "experiment_id": 5,
+      "config": {
+        "kind": "random_walk",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 10000,
+        "bin_width": 100,
+        "drift_std": 0.01,
+        "reward_std": 1.0,
+        "change_step": 5000,
+        "initialization": "zeros"
+      },
+      "seeds": {
+        "environment": {
+          "initial": 11271358117413507012,
+          "rewards": 18311880885305503318,
+          "drift": 17207119350374388823,
+          "permutation": 4936234015701692468
+        },
+        "agents": {
+          "sample average": 4396607643976557996,
+          "alpha=0.1": 4280428712481710021,
+          "greedy alpha=0.1": 13430797290485781634,
+          "optimistic greedy": 1390934983026192119,
+          "UCB sample average": 9569392142064744732,
+          "UCB alpha=0.1 (variant)": 14811650864932326780
+        }
+      },
+      "simulation_seconds": 51.73247999197338
+    },
+    "sudden_change": {
+      "experiment_id": 6,
+      "config": {
+        "kind": "sudden_change",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 10000,
+        "bin_width": 100,
+        "drift_std": 0.01,
+        "reward_std": 1.0,
+        "change_step": 5000,
+        "initialization": "normal"
+      },
+      "seeds": {
+        "environment": {
+          "initial": 6793485180036989661,
+          "rewards": 7166633801301618996,
+          "drift": 17700398147320526971,
+          "permutation": 4023881602078175896
+        },
+        "agents": {
+          "sample average": 7967383938051720941,
+          "alpha=0.1": 15181742879256476436,
+          "greedy alpha=0.1": 3748898345356537697,
+          "optimistic greedy": 9507953575096200931,
+          "UCB sample average": 10397816653177491066,
+          "UCB alpha=0.1 (variant)": 6088650858484263648
+        }
+      },
+      "simulation_seconds": 45.51403612899594
+    }
+  },
+  "total_seconds": 106.43624999001622,
+  "finished_utc": "2026-09-28T16:06:28.204779+00:00"
+}

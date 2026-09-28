@@ -20,6 +20,14 @@ finds that the best tested constant rate increases with stronger drift, while
 noise 2 favors smaller rates than noise 1 at the two highest drift levels.
 $\alpha=0.1$ wins only 3 of 15 conditions; the pattern is conditional, not universal.
 
+The [exploration follow-up](#our-exploration-experiment-stable-versus-changing-worlds)
+asks whether exploration that works in a stable world keeps working when the
+world changes. It adds optimistic initial values and UCB from Sections 2.6–2.7.
+Textbook UCB has the lowest total regret in the stationary run; constant-alpha
+epsilon-greedy has the lowest mean under gradual change, close to our UCB
+variant. Optimistic greedy wins the sudden-change reward comparison, while
+the fixed-task trace shows how it can still miss a newly best action.
+
 ## Run it
 
 Use Python 3.10 or newer. From the repository root:
@@ -52,7 +60,15 @@ An **action** is a choice of arm. Its **true value** $q_t(a)$ is the mean reward
 available from that choice at time $t$. The agent cannot see this value. Its
 estimate $Q_t(a)$ comes only from rewards it has actually received.
 
-Every estimate and action count starts at zero. An **epsilon-greedy** learner
+This is a **bandit problem**: each decision selects one reward source, and the
+agent sees only the reward from its chosen action. There is no observed state
+to navigate and no action-dependent transition to a future situation. Choices
+affect what the agent learns, but the world's values evolve independently of
+those choices. Changing rewards alone do not turn this into a learned world
+model or a full state-based control problem.
+
+Action counts start at zero. Estimates start at zero except in the explicitly
+optimistic learner below. An **epsilon-greedy** learner
 explores with probability $\epsilon$, choosing uniformly among all ten actions.
 Otherwise it chooses an action with the largest estimate, breaking exact ties
 uniformly at random. Exploration may also select a greedy action.
@@ -88,8 +104,9 @@ that a neglected action has improved.
 
 For example, rewards 2 and 4 produce the sample average 3. Starting from zero,
 $\alpha=0.1$ instead produces estimates 0.2 and then 0.58. That slow start is
-part of the method: we use no bias correction, optimistic initialization,
-change detector, or reset.
+part of the method: the first experiments and memory sweep use no bias
+correction or optimistic initialization. None of our experiments gives an
+agent a change detector or a reset.
 
 In a stable environment, old observations remain relevant and averaging reduces
 reward noise. In a changing environment, old observations can be misleading.
@@ -99,8 +116,8 @@ are sampled; $\alpha$ controls what is learned from a sample.
 
 ## Experimental design and Chapter 2 connection
 
-All experiments use ten actions and independent reward noise with standard
-deviation 1:
+The first three experiments use ten actions and independent reward noise with
+standard deviation 1 (the later memory sweep varies this noise):
 
 $$
 R_t = q_t(A_t)+Z_{t,A_t},\qquad Z_{t,a}\sim\mathcal N(0,1).
@@ -545,6 +562,275 @@ final regret per decision, total regret, final reward, final optimal fraction.
 100-step bin means/standard errors and plotting coordinates. We retain no
 large task-by-time-by-action cube and no full per-task trajectories for the sweep.
 
+## Our exploration experiment: stable versus changing worlds
+
+**Does exploration that works in a stable world keep working when the world changes?**
+Our memory experiments varied how rewards change estimates. This follow-up
+also varies which actions the learner chooses to observe. We specified three
+hypotheses before running:
+
+- Optimism can encourage early exploration but may fail to renew it after change.
+- UCB can work well in a stable world while lifetime counts cease to describe
+  how much an agent knows about current values after change.
+- Fast value updates may be insufficient when an agent rarely revisits actions
+  that used to look poor.
+
+### Six learners and two different decisions
+
+| ID | Selection rule | Update | Initial estimate |
+| --- | --- | --- | --- |
+| 1 | Epsilon-greedy, $\epsilon=0.1$ | Sample average | 0 |
+| 2 | Epsilon-greedy, $\epsilon=0.1$ | $\alpha=0.1$ | 0 |
+| 3 | Greedy, $\epsilon=0$ | $\alpha=0.1$ | 0 |
+| 4 | Optimistic greedy, $\epsilon=0$ | $\alpha=0.1$ | 5 |
+| 5 | Textbook UCB, $c=2$ | Sample average | 0 |
+| 6 | **Our UCB variant**, $c=2$ | $\alpha=0.1$ | 0 |
+
+**Alpha controls learning; epsilon controls sampling.** Increasing $\alpha$
+changes the weight of a received reward. Increasing $\epsilon$ changes how
+often the learner tries a uniformly random action. A high learning rate does
+nothing to an action's estimate until that action is visited. Memory remains
+measured in **visits per action**, not elapsed decisions.
+
+**Optimism (Section 2.6).** Learner 4 sets $Q_0(a)=5$ for every action and then
+acts greedily. Most rewards lower the selected estimate, making unvisited or
+less-visited alternatives attractive. The initial contribution after $n$ visits
+is $5(1-0.1)^n$. It fades with visits; there is no automatic restart after change.
+
+**UCB (Section 2.7).** With zero-based decision index $t$ and counts before the
+decision, tried actions receive the score
+
+$$
+U_t(a)=Q_t(a)+2\sqrt{\frac{\log(t+1)}{N_t(a)}}.
+$$
+
+Choose a maximizing score, breaking ties uniformly. If any action is untried,
+choose uniformly among untried actions first. The code never divides by zero.
+The bonus favors actions with fewer observations; its logarithmic time term
+grows while an action goes unvisited. We consulted the
+[second-edition book text](https://studylib.net/doc/27814306/reinforcement-learning--an-introduction)
+and [reference implementation](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction/blob/master/chapter02/ten_armed_testbed.py).
+
+Learner 6 changes only the value estimator relative to 5. It keeps **ordinary
+lifetime counts**, although its estimates emphasize recent rewards. We do not
+claim that these bonuses are calibrated confidence bounds in changing worlds.
+Neither UCB learner receives a change signal or resets its counts.
+
+### Design, commands, and runtime
+
+Every experiment uses 2,000 independent ten-armed tasks and reward noise with
+standard deviation 1. A runs 1,000 decisions with fixed initial true values
+from $\mathcal N(0,1)$. B runs 10,000 decisions with all initial true values
+zero and independent $\mathcal N(0,0.01^2)$ increments after interactions.
+This is our **original Exercise 2.5 setup**, unlike the memory sweep's normal
+initialization. C runs 10,000 decisions with initial $\mathcal N(0,1)$ values,
+permuted before decision 5,000. C remains **our sudden-change extension**.
+
+Methods share initial values, potential rewards, and changes within each
+experiment. Their own random streams are separate. Agents receive only their
+chosen actions and rewards, with no true values, unchosen rewards, other
+learners' observations, or change notification. All maximizing true actions
+count as optimal, including all ten actions at B's first decision.
+
+Run only this follow-up from the repository root, using the environment above:
+
+```bash
+python exploration_checks.py
+python run_exploration.py
+# Rebuild the figures without running any simulation:
+python run_exploration.py --plot-only
+```
+
+The master seed is **20260928**, with new experiment IDs **4, 5, 6** and stable
+method IDs. Earlier method seeds and defaults are preserved. Each finished
+experiment is saved under [`results/exploration/`](results/exploration/) before
+the next begins. A normal rerun overwrites only those exploration outputs;
+use `--output results-another-exploration` for a separate run. The earlier
+experiments and memory sweep were **not rerun**, and all 50 existing result
+files remain byte-for-byte unchanged.
+
+The full run on **2026-09-28** took **106.44 s**, including saving and plotting.
+Simulation times were **4.89 s** (A), **51.73 s** (B), and **45.51 s** (C), for
+**252 million learner–task decisions**. Software: Python 3.10.12, NumPy 1.26.4,
+Matplotlib 3.10.9, Linux/WSL2. Brief checks covered optimistic initialization,
+untried-action priority, the finite-count UCB formula, ties, and seed stability.
+A short regression check confirmed unchanged older epsilon-greedy trajectories.
+
+### Measured outcomes
+
+All ± values below are **95% confidence interval half-widths**, using independent
+tasks as the sampling units. They describe uncertainty in the mean, not the
+spread of individual tasks. Full JSON summaries also contain task SDs and
+quantiles. Compare learners **within** an environment: A has a shorter horizon,
+and B's random walk changes both action rankings and the spread of values.
+
+Mean **total dynamic pseudo-regret** over each complete experiment:
+
+| Learner | A: stationary | B: gradual | C: sudden |
+| --- | ---: | ---: | ---: |
+| 1 | 231.2 ± 5.4 | 3198.7 ± 64.9 | 6130.8 ± 169.6 |
+| 2 | 282.8 ± 8.1 | 1528.4 ± 9.0 | 2075.2 ± 27.9 |
+| 3 | 300.9 ± 18.3 | 2290.5 ± 84.3 | 2801.2 ± 153.8 |
+| 4 | 241.5 ± 1.6 | 2041.9 ± 77.3 | 497.5 ± 15.5 |
+| 5 | 147.9 ± 1.5 | 1997.3 ± 76.8 | 872.5 ± 41.9 |
+| 6 | 282.6 ± 3.1 | 1574.3 ± 49.7 | 926.7 ± 19.6 |
+
+A's complete-run outcomes and B's final 1,000 decisions are:
+
+| Environment / window | Learner | Reward | Optimal (%) | Regret / decision |
+| --- | ---: | ---: | ---: | ---: |
+| A: all 1,000 | 1 | 1.291 ± 0.024 | 70.5 ± 1.3 | 0.231 ± 0.005 |
+| A: all 1,000 | 2 | 1.240 ± 0.022 | 62.7 ± 1.3 | 0.283 ± 0.008 |
+| A: all 1,000 | 3 | 1.221 ± 0.024 | 50.5 ± 2.1 | 0.301 ± 0.018 |
+| A: all 1,000 | 4 | 1.280 ± 0.026 | 70.8 ± 0.9 | 0.242 ± 0.002 |
+| A: all 1,000 | 5 | 1.373 ± 0.026 | 75.1 ± 0.8 | 0.148 ± 0.001 |
+| A: all 1,000 | 6 | 1.239 ± 0.027 | 61.1 ± 0.9 | 0.283 ± 0.003 |
+| B: final 1,000 | 1 | 1.053 ± 0.028 | 44.5 ± 1.8 | 0.447 ± 0.017 |
+| B: final 1,000 | 2 | 1.323 ± 0.024 | 76.1 ± 0.8 | 0.178 ± 0.002 |
+| B: final 1,000 | 3 | 1.160 ± 0.026 | 46.0 ± 1.9 | 0.340 ± 0.020 |
+| B: final 1,000 | 4 | 1.197 ± 0.026 | 49.2 ± 1.9 | 0.303 ± 0.019 |
+| B: final 1,000 | 5 | 1.153 ± 0.028 | 47.7 ± 2.0 | 0.347 ± 0.021 |
+| B: final 1,000 | 6 | 1.305 ± 0.026 | 59.4 ± 1.9 | 0.196 ± 0.014 |
+
+For C we report the three requested windows separately. Bounds are
+`[4000, 5000)`, `[5000, 6000)`, and `[5000, 10000)`. Regret here is normalized
+per decision to make window lengths clear; each JSON also saves the window's
+regret **sum** and its uncertainty.
+
+| Window | Learner | Reward | Optimal (%) | Regret / decision |
+| --- | ---: | ---: | ---: | ---: |
+| Last 1,000 before | 1 | 1.373 ± 0.024 | 85.9 ± 0.9 | 0.157 ± 0.002 |
+| Last 1,000 before | 2 | 1.355 ± 0.024 | 78.6 ± 0.8 | 0.175 ± 0.002 |
+| Last 1,000 before | 3 | 1.299 ± 0.023 | 58.7 ± 2.1 | 0.231 ± 0.018 |
+| Last 1,000 before | 4 | 1.514 ± 0.026 | 89.7 ± 1.2 | 0.016 ± 0.002 |
+| Last 1,000 before | 5 | 1.517 ± 0.026 | 93.2 ± 0.6 | 0.013 ± 0.001 |
+| Last 1,000 before | 6 | 1.465 ± 0.027 | 81.2 ± 1.4 | 0.064 ± 0.004 |
+| First 1,000 after | 1 | 0.078 ± 0.039 | 11.2 ± 1.2 | 1.452 ± 0.043 |
+| First 1,000 after | 2 | 1.158 ± 0.023 | 52.5 ± 1.5 | 0.371 ± 0.012 |
+| First 1,000 after | 3 | 1.142 ± 0.023 | 42.9 ± 2.0 | 0.388 ± 0.020 |
+| First 1,000 after | 4 | 1.448 ± 0.027 | 73.4 ± 1.7 | 0.081 ± 0.004 |
+| First 1,000 after | 5 | 1.081 ± 0.030 | 58.8 ± 1.7 | 0.448 ± 0.026 |
+| First 1,000 after | 6 | 1.389 ± 0.028 | 65.9 ± 1.7 | 0.141 ± 0.006 |
+| All 5,000 after | 1 | 0.479 ± 0.029 | 22.0 ± 1.4 | 1.051 ± 0.033 |
+| All 5,000 after | 2 | 1.312 ± 0.024 | 72.6 ± 0.8 | 0.218 ± 0.004 |
+| All 5,000 after | 3 | 1.235 ± 0.022 | 50.6 ± 2.1 | 0.295 ± 0.018 |
+| All 5,000 after | 4 | 1.496 ± 0.026 | 82.4 ± 1.4 | 0.034 ± 0.003 |
+| All 5,000 after | 5 | 1.403 ± 0.025 | 81.8 ± 1.2 | 0.127 ± 0.009 |
+| All 5,000 after | 6 | 1.470 ± 0.027 | 80.4 ± 1.1 | 0.060 ± 0.002 |
+
+The four planned comparisons below are **paired mean differences in regret
+per decision**, first learner minus second, with 95% intervals. Negative means
+less regret for the first learner. Pairing occurs within each independent task
+before computing uncertainty; correlated decisions are never separate samples.
+Intervals are pointwise and unadjusted for multiple comparisons.
+
+| Pair | A: all | B: all | C: first 1,000 after | C: all after |
+| --- | --- | --- | --- | --- |
+| 4 − 3 | -0.0594 [-0.0779, -0.0409] | -0.0249 [-0.0338, -0.0159] | -0.3066 [-0.3275, -0.2858] | -0.2608 [-0.2795, -0.2421] |
+| 5 − 1 | -0.0833 [-0.0893, -0.0773] | -0.1201 [-0.1280, -0.1123] | -1.0043 [-1.0423, -0.9663] | -0.9239 [-0.9537, -0.8941] |
+| 6 − 2 | -0.0002 [-0.0096, +0.0092] | +0.0046 [-0.0004, +0.0096] | -0.2307 [-0.2446, -0.2168] | -0.1575 [-0.1623, -0.1528] |
+| 6 − 5 | +0.1347 [+0.1321, +0.1373] | -0.0423 [-0.0502, -0.0344] | -0.3075 [-0.3339, -0.2810] | -0.0673 [-0.0764, -0.0583] |
+
+- **4 versus 3, initialization:** optimism lowers total regret in all three
+  experiments. This isolates initialization while retaining greedy selection
+  and $\alpha=0.1$, with separate learner random streams.
+- **5 versus 1, selection with sample averages:** UCB lowers total regret in
+  all three experiments and regret in both post-change windows. These results
+  do **not** support a blanket claim that UCB becomes worse than epsilon-greedy
+  whenever the world changes.
+- **6 versus 2, selection with $\alpha=0.1$:** their complete-run regret
+  differences are unresolved in A and B at this precision. In B's final 1,000
+  decisions, however, 6 has **0.0177 [0.0039, 0.0316]** more regret per decision.
+  In C, 6 clearly outperforms 2 after the change.
+- **6 versus 5, UCB estimator:** recency weighting hurts in A but helps in B
+  and C's post-change windows. In C's **last** 1,000 decisions, the direction
+  reverses again: 6 has **0.0115 [0.0060, 0.0170]** more regret per decision.
+  Once the permuted world stays fixed, sample averaging becomes useful again.
+  Learner 5 also has lower total regret over the full C run.
+
+### What the figures teach us
+
+![Stationary textbook comparison pairs](results/exploration/stationary_textbook_pairs.png)
+
+The left panels use the **Figure 2.3 comparison**: 4 versus 2, both with
+$\alpha=0.1$. For isolating initialization alone, use 4 versus 3 above.
+The right panels use the **Figure 2.4 comparison**: 5 versus 1, both with
+sample-average estimates. These are new simulations at the textbook settings.
+The early views retain unbinned data. UCB tries each arm once; at decision 10
+all counts equal one, so the largest first reward wins. Subsequent choices
+have unequal bonuses, explaining the spike and decline. Optimism produces a
+related early cycle of trying attractive estimates and lowering them.
+
+Textbook UCB has the lowest mean **total** regret in A. Optimistic greedy has
+an early cost but finishes strongly: in the last 100 decisions, its mean
+reward is **1.483** and optimal-action frequency **85.2%**, versus **1.336**
+and **75.7%** for learner 2. The horizon and measurement window matter.
+The [all-six stationary curves](results/exploration/stationary.png) include
+reward, optimal frequency, and cumulative regret with task-level intervals.
+
+![Gradual-change exploration comparison](results/exploration/random_walk.png)
+
+In B, persistent epsilon exploration plus recent-value estimates (2) has the
+lowest mean total regret, although its paired whole-run difference from 6
+includes zero. Its late advantage is clearer. Learner 6's final optimal-action
+frequency is only 59.4%, versus 76.1% for 2, even though their rewards are close.
+Selecting a nearly optimal arm can lose little reward while counting as a miss.
+UCB sample averages initially do well, then lose optimal-action frequency as
+the world drifts. This is consistent with stale information, but we have not
+isolated lifetime counts as the cause: both UCB learners retain those counts.
+
+![Sudden-change exploration comparison](results/exploration/sudden_change.png)
+
+C **does not support the prediction that optimism must lose its usefulness
+after an unannounced change**. Learner 4 has the highest mean reward in the
+first 1,000 post-change decisions (**1.448**) and over all 5,000 afterward
+(**1.496**), and the lowest regret in both windows. This is a measured window
+comparison; we did **not** measure a fastest recovery time.
+
+A plausible explanation is specific to this setup: a permutation often makes
+the old favorite worse, which can lower its estimate enough to prompt switching.
+Optimistic initialization can leave other arms' estimates high even after they
+have gone unvisited. Greedy selection can then revisit them without a fresh
+optimism reset. Long stationary stretches also reward avoiding epsilon's ongoing
+random sampling. This interpretation does not establish robustness to other
+kinds of change, and lifetime-count UCB still shows a large immediate performance
+loss despite its later improvement.
+
+![Fixed task 0 action raster around the sudden change](results/exploration/sudden_action_raster.png)
+
+Task **0** and window **[4500, 6500)** were fixed before viewing results. Here
+the best arm changes from **9 to 2**, but arm 9 remains good: its new true value
+is **1.308**, only **0.087** below arm 2's **1.395**. In the first 1,000 decisions
+afterward, both greedy learners select arm 9 on **all 1,000 decisions**; neither
+UCB learner selects arm 2 even once. Epsilon-greedy learners 1 and 2 visit arm
+2 **6 and 15 times**, respectively. Thus a high learning rate can coexist with
+no observations of the newly best action. For optimistic greedy, arm 2's estimate
+at the change is **0.712**, and it stays frozen throughout that window.
+
+This one trace supports the **possibility** of failed renewed exploration,
+even though optimistic greedy wins the population reward comparison. It also
+shows why we should not equate high reward, finding the exact best arm, and
+fast learning. Together the experiments support separating **value estimation**
+from **data collection**, while rejecting a universal ranking of these six
+specified settings. We did not tune epsilon, optimism, or UCB's coefficient.
+
+### Exploration data and code
+
+[run_exploration.py](run_exploration.py) defines the six settings and the four
+planned pairs, reusing the existing simulator. [exploration_figures.py](exploration_figures.py)
+plots the saved arrays; [exploration_checks.py](exploration_checks.py) contains
+the short new checks. The original copyright declaration remains in `bandits.py`.
+
+The three `.npz` files use the same labeled axes as the first experiments:
+`task_windows` has shape **method × window × task × metric**. Its reward and
+optimal fractions are window averages; regret is a window sum. The three
+`*_summary.json` files add regret per decision and all four planned paired
+comparisons for every window and metric. Task 0 retains actions, received
+rewards, true values, and estimates before decisions for auditing. No large
+cube of every task's trajectories is stored. The 12 output files total about
+**10.9 MiB**; [manifest.json](results/exploration/manifest.json) records exact
+configuration, seeds, source hashes, timestamps, and measured runtime.
+
 ## Read the code and saved results
 
 Start with [bandits.py](bandits.py): `Agent.act` selects actions and `Agent.learn`
@@ -611,17 +897,20 @@ world changes independently of the learner's choices.
 
 ## One next scientific question
 
-Do faster changes favor larger learning rates when the spread of action values
-is held fixed? A follow-up could use
-$q_{t+1}(a)=\rho q_t(a)+\sqrt{1-\rho^2}\,\xi_{t,a}$, initialized from
-$\mathcal N(0,1)$. This keeps marginal variance at 1 while varying temporal
-persistence through $\rho$. Fix reward noise and exploration, then repeat the
-learning-rate comparison. It would help separate the effect of change speed
-from the growing action-value gaps in an unrestricted random walk.
+**Can an agent discover an improving neglected arm when its current favorite
+does not get worse?** After 5,000 stationary decisions, raise the initially
+worst arm to 0.5 above the old maximum while leaving every other true value
+unchanged. Give no notification. Compare the same six learners, measuring
+post-change regret and the delay until the first visit to the improved arm.
+This would test whether the strong optimistic-greedy result depended on a
+permutation lowering the old favorite enough to trigger new sampling.
 
 ## Reference implementation and license
 
-We consulted and adapted the epsilon-greedy and incremental-update design of
+We consulted Sections 2.6–2.7 of Sutton and Barto's second edition
+([book text](https://studylib.net/doc/27814306/reinforcement-learning--an-introduction))
+for optimism, UCB, and Figures 2.3–2.4. We consulted and adapted the
+epsilon-greedy, optimism, UCB, and incremental-update design of
 [Shangtong Zhang's Chapter 2 implementation](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction/blob/master/chapter02/ten_armed_testbed.py).
 Its authors' declaration is retained at the top of `bandits.py`; the upstream
 MIT license and attribution are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

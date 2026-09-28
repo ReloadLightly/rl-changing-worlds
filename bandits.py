@@ -7,7 +7,7 @@
 # Permission given to modify the code as long as you keep this         #
 # declaration at the top                                              #
 #######################################################################
-"""Chapter 2 epsilon-greedy bandits, vectorized over independent tasks.
+"""Chapter 2 action-value bandits, vectorized over independent tasks.
 
 Adapted conceptually from Shangtong Zhang's ten_armed_testbed.py; see
 THIRD_PARTY_NOTICES.md. Environmental dynamics and measurement are separate
@@ -24,6 +24,8 @@ class Method:
     name: str
     epsilon: float
     alpha: float | None = None  # None means sample averages, step size 1/N(a).
+    initial_estimate: float = 0.0
+    ucb_c: float | None = None  # None selects epsilon-greedy instead of UCB.
 
 
 STATIONARY_METHODS = [Method(f"epsilon={e:g}", e) for e in (0, 0.01, 0.1)]
@@ -38,15 +40,28 @@ class Agent:
     def __init__(self, tasks, arms, method, seed):
         self.method = method
         self.rng = np.random.default_rng(seed)
-        self.q = np.zeros((tasks, arms))
+        self.q = np.full((tasks, arms), method.initial_estimate, dtype=float)
         self.counts = np.zeros((tasks, arms), dtype=np.int64)
         self.rows = np.arange(tasks)
+        self.time = 0  # Number of completed interactions, shared across task rows.
 
     def act(self):
+        values = self.q
+        if self.method.ucb_c is not None:
+            # Counts are from BEFORE this decision. Never divide by zero.
+            tried = self.counts > 0
+            bonus = np.zeros_like(self.q)
+            np.divide(np.log(self.time + 1), self.counts, out=bonus, where=tried)
+            values = self.q + self.method.ucb_c * np.sqrt(bonus)
+            # Untried actions have absolute priority, irrespective of estimates.
+            values = np.where(tried, values, np.inf)
         # Independent random scores select uniformly among *all* exact ties.
-        ties = self.q == self.q.max(axis=1, keepdims=True)
+        ties = values == values.max(axis=1, keepdims=True)
         scores = self.rng.random(self.q.shape)
         greedy = np.where(ties, scores, -1).argmax(axis=1)
+        if self.method.ucb_c is not None:
+            return greedy
+        # Preserve the existing epsilon-greedy RNG draw order, even at epsilon=0.
         explore = self.rng.random(len(self.rows)) < self.method.epsilon
         random_actions = self.rng.integers(self.q.shape[1], size=len(self.rows))
         return np.where(explore, random_actions, greedy)
@@ -58,6 +73,7 @@ class Agent:
             step_size = 1.0 / self.counts[self.rows, actions]
         old = self.q[self.rows, actions]
         self.q[self.rows, actions] = old + step_size * (rewards - old)
+        self.time += 1
 
 
 class Environment:
@@ -112,7 +128,9 @@ def make_seeds(master, experiment_id, methods):
     ids = {"epsilon=0": 100, "epsilon=0.01": 101, "epsilon=0.1": 102,
            "sample average": 200, "alpha=0.01": 201, "alpha=0.1": 202,
            "alpha=0.5": 203, "alpha=0.003": 204, "alpha=0.03": 205,
-           "alpha=0.3": 206}
+           "alpha=0.3": 206, "greedy alpha=0.1": 300,
+           "optimistic greedy": 301, "UCB sample average": 302,
+           "UCB alpha=0.1 (variant)": 303}
     return {"environment": environment,
             "agents": {m.name: seed(ids[m.name]) for m in methods}}
 

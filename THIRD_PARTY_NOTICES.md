@@ -1,11 +1,14 @@
 # Reference implementation and attribution
 
-`bandits.py` adapts the epsilon-greedy action selection and incremental
-sample-average / constant-step-size learning ideas from
+`bandits.py` adapts epsilon-greedy and UCB action selection, optimistic
+initialization, and incremental sample-average / constant-step-size learning ideas from
 [Shangtong Zhang's `chapter02/ten_armed_testbed.py`](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction/blob/master/chapter02/ten_armed_testbed.py),
 consulted on 2026-09-28. The implementation here separates the learner from
 the environment, vectorizes tasks, and adds shared environmental realizations,
 nonstationarity, uncertainty estimates, and reproducible result recording.
+UCB explicitly prioritizes untried actions instead of adding a small constant
+to the count denominator. The constant-alpha UCB comparison is our variant;
+it retains ordinary lifetime counts.
 The source file's copyright and modification-permission declaration is
 preserved at the top of `bandits.py`.
 
