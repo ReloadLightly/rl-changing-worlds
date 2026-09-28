@@ -8,11 +8,17 @@ chooses one of ten actions, receives a noisy reward, and updates its estimate
 of that action's value. The aim is to understand the code and the evidence,
 including where a simple learning rule fails.
 
-**Measured answer:** forgetting helped when values changed, but the amount
+**First experiments:** forgetting helped when values changed, but the amount
 mattered. Of the tested methods, $\alpha=0.1$ minimized total regret in both
 changing environments. Sample averages were slightly better just before the
-sudden change, and $\alpha=0.5$ adapted fastest immediately afterward. Keeping
+sudden change, and $\alpha=0.5$ had the highest mean reward in the first 1,000
+post-change steps. We did not measure a separate recovery time. Keeping
 more history helps suppress noise; keeping less helps follow a new environment.
+
+**Memory sweep:** the [15-condition follow-up](#our-memory-sweep-shorter-memory-or-a-noisier-world)
+finds that the best tested constant rate increases with stronger drift, while
+noise 2 favors smaller rates than noise 1 at the two highest drift levels.
+$\alpha=0.1$ wins only 3 of 15 conditions; the pattern is conditional, not universal.
 
 ## Run it
 
@@ -176,7 +182,7 @@ come from per-task bin averages, not smoothed standard errors. Bins do not
 straddle the sudden change. Regret is plotted at bin endpoints. Unbinned
 per-step means and standard errors are also saved.
 
-## Measured results
+## First experiments: measured results
 
 The full run completed on **2026-09-28**, using seed **20260928**, Python 3.10.12,
 NumPy 1.26.4, and Matplotlib 3.10.9 on Linux/WSL2. Simulation took **2.77 s**
@@ -300,6 +306,245 @@ separately from uncertainty in the average. One illustrative trajectory cannot
 establish the population-level ranking; the 2,000-task comparisons provide that
 evidence for these particular environments and horizons.
 
+## Our memory sweep: shorter memory or a noisier world?
+
+**Question:** how do environmental change and reward noise jointly affect which
+learning rate performs best? The three hypotheses, stated before the sweep,
+are that faster change may favor larger rates, greater observation noise may
+favor smaller rates, and $\alpha=0.1$ may not remain best across conditions.
+These are hypotheses to investigate, not assumptions imposed on the results.
+
+**Drift** changes what a patch is expected to provide. Even its average payoff
+tomorrow can differ from today's. **Reward noise** makes individual visits
+unpredictable even when that expected payoff stays fixed. Averaging repeated
+visits can reduce noise, but averaging very old visits can obscure drift.
+
+### Design and commands
+
+This is a new extension of Chapter 2's bandit experiment. **All conditions
+start with independent $q_0(a)\sim\mathcal N(0,1)$ values.** This deliberately
+differs from the original Exercise 2.5 setup, where all values start equal to
+zero. Here zero drift retains meaningful differences between the ten actions.
+All learner estimates still start at zero.
+
+After each interaction, every action's value changes independently:
+
+$$
+q_{t+1}(a)=q_t(a)+\sigma_d\xi_{t,a},\qquad
+R_t=q_t(A_t)+\sigma_r Z_{t,A_t},\qquad
+\xi_{t,a},Z_{t,a}\sim\mathcal N(0,1).
+$$
+
+| Setting | Tested values |
+| --- | --- |
+| Drift standard deviation $\sigma_d$ | 0, 0.001, 0.003, 0.01, 0.03 |
+| Reward standard deviation $\sigma_r$ | 0.5, 1, 2 |
+| Learners | Sample averages; constant $\alpha=0.003,0.01,0.03,0.1,0.3,0.5$ |
+| Exploration | $\epsilon=0.1$ for every learner |
+| Replications and horizon | 2,000 independent tasks × 10,000 decisions in each of 15 conditions |
+
+The same initial values, standard-normal drift draws, and standard-normal
+potential reward draws are reused **across all conditions**, scaled by the
+specified standard deviations. Methods within a condition therefore encounter
+identical potential rewards for identical choices. The sweep restarts the
+same separate stream for each method in every condition, too; no learner
+observes another learner's data. Drift/noise settings, true values, and unchosen
+rewards are available only to the environment and evaluator.
+
+The master seed remains 20260928, with a new experiment ID of 3. Existing
+method seed IDs are preserved, and the extra rates have explicit new IDs;
+Python's randomized `hash()` is not used. Changing the reward standard
+deviation now actually scales reward generation. The original experiments all
+used standard deviation 1 and retain their original defaults and saved results.
+
+```bash
+source .venv/bin/activate
+python memory_sweep_checks.py
+python run_memory_sweep.py
+# If interrupted, reuse completed conditions with matching configuration/seeds/code:
+python run_memory_sweep.py --resume
+# Rebuild tables and figures using saved completed conditions:
+python run_memory_sweep.py --plot-only
+```
+
+The new results live in `results/memory_sweep/`. Each completed condition saves
+a compressed `.npz` and a JSON record with configuration, seeds, source hashes,
+timing, and summaries. The manifest records progress after each condition.
+`--resume` rejects mismatched saved conditions; use `--output` for a separate
+run. No original experiment needs to be rerun for this sweep.
+
+### Outcome, weighting, and uncertainty
+
+The **primary outcome** is each task's mean dynamic pseudo-regret per decision
+over decisions 9,000–9,999:
+
+$$
+L=\frac{1}{1000}\sum_{t=9000}^{9999}
+\left[\max_a q_t(a)-q_t(A_t)\right].
+$$
+
+Lower is better. Secondary outcomes are total 10,000-step regret, final-window
+mean reward, and final-window optimal-action frequency. For each outcome we
+compute method-minus-sample-average differences within the same task, then
+average these paired differences across 2,000 tasks. Negative regret differences
+favor the constant-rate method; positive reward/frequency differences favor it.
+
+Constant $\alpha$ weights a reward from $k$ visits ago by
+$\alpha(1-\alpha)^k$. Larger rates emphasize newer evidence and transmit more
+reward noise. The approximate $1/\alpha$ memory scales here are 333, 100, 33,
+10, 3.3, and 2 **visits to an action**. They are not global environment steps:
+an action visited rarely can retain an old estimate for a long time. The
+initial estimate also retains weight $(1-\alpha)^n$ after $n$ visits, which can
+matter at finite horizons for the smallest rates.
+
+Intervals are mean ± 1.96 across-task standard errors. We also compare the
+empirical winner with the runner-up and other methods using paired differences.
+These are **exploratory, pointwise comparisons**: selecting the winner after
+seeing the same data and making many comparisons is not accounted for by the
+ordinary 95% intervals. An interval including zero does not establish equality,
+and the lowest tested mean does not identify a universally optimal rate.
+Overlapping intervals for separate means do not determine whether a paired
+difference is distinguishable from zero. Conditions reuse tasks, so they are
+not 15 independent replications of a trend.
+
+The heatmap colors compare methods **within the same environment**, using
+excess primary regret over that row's best mean; cell labels show absolute
+primary regret and its interval. This matters because faster random walks
+also spread action values farther apart. Starting at variance 1 gives marginal
+variance $1+t\sigma_d^2$. Larger gaps change the attainable reward, the cost
+of exploration, and the scale of regret. Raw comparisons across drift levels
+therefore do not isolate adaptation difficulty alone.
+
+The three learning-curve conditions were selected in advance: zero drift with
+noise 1, drift 0.01 with noise 1, and drift 0.01 with noise 2. Curves use the same
+100-step task averages and pointwise intervals as the first experiments.
+
+### Measured sweep results
+
+The full sweep completed on **2026-09-28** with **2.1 billion interactions**.
+Simulation took **894.12 s**; saving, tables, and plotting brought the full run
+to **897.95 s (14 min 58 s)**. It used Python 3.10.12, NumPy 1.26.4, and
+Matplotlib 3.10.9 on the same Linux/WSL2 CPU environment as the first experiments.
+The new data, metadata, and five figures occupy **7.5 MiB**. All 13 original
+result files were preserved byte-for-byte; the original experiments were not rerun.
+
+The table shows the **lowest measured primary outcome** among the seven
+learners, not a universally optimal setting. SA means sample averages.
+
+| Drift standard deviation | Reward noise 0.5 | Reward noise 1 | Reward noise 2 |
+| --- | --- | --- | --- |
+| 0 | SA† | SA | SA |
+| 0.001 | $\alpha=0.03$ | SA | SA |
+| 0.003 | $\alpha=0.03$ | $\alpha=0.03$ | $\alpha=0.03$‡ |
+| 0.01 | $\alpha=0.1$ | $\alpha=0.1$ | $\alpha=0.03$ |
+| 0.03 | $\alpha=0.3$† | $\alpha=0.3$ | $\alpha=0.1$ |
+
+† The paired 95% interval against the runner-up includes zero. ‡ The interval
+only just excludes zero. Details appear below; none is adjusted for selection
+or multiple comparisons.
+
+![Primary outcome by drift and method with reward noise 0.5](results/memory_sweep/heatmap_noise_0.5.png)
+
+![Primary outcome by drift and method with reward noise 1](results/memory_sweep/heatmap_noise_1.png)
+
+![Primary outcome by drift and method with reward noise 2](results/memory_sweep/heatmap_noise_2.png)
+
+![Best tested methods and constant learning rates across drift and reward noise](results/memory_sweep/best_tested_rates.png)
+
+**Hypothesis 1: supported directionally.** Among constant-rate learners, noise
+0.5 and noise 1 both give the sequence **0.03, 0.03, 0.03, 0.1, 0.3** as drift
+increases. Noise 2 gives **0.03, 0.03, 0.03, 0.03, 0.1**. Faster change favored
+larger rates at the upper end of the tested grid, but not at every increase in
+drift. Sample averages won the three stationary conditions and two of the
+smallest-drift conditions. Because drift also enlarges value gaps, this is
+evidence for these random-walk environments, not an isolated causal law about
+change speed alone.
+
+**Hypothesis 2: supported at higher drift, not uniformly.** At drift 0.01,
+increasing noise from 1 to 2 changes the winner from $\alpha=0.1$ to
+$\alpha=0.03$. At noise 2, their mean regrets are **0.2825** and **0.2483** per
+decision: the smaller rate's paired difference is
+**−0.0342 [−0.0384, −0.0299]**. At drift 0.03 the winner changes from 0.3 to
+0.1; with noise 2, rate 0.1 beats rate 0.3 by
+**−0.0472 [−0.0531, −0.0413]**. These comparisons are within each environment.
+However, **no best constant rate changed when noise rose from 0.5 to 1**, and
+the lowest three drift levels selected 0.03 at every noise level. The stronger
+claim that every increase in noise should lower the best tested rate is not
+supported by this sweep.
+
+**Hypothesis 3: supported.** $\alpha=0.1$ wins **3/15** conditions by the primary
+outcome; sample averages win 5, rate 0.03 wins 5, and rate 0.3 wins 2. The first
+experiments identified a useful setting for their comparisons, not a general
+default that wins everywhere. These counts describe this grid and are not
+independent replications or a statistical test of the hypotheses.
+
+#### Close comparisons
+
+All differences here are **first method minus second method**, in final-window
+regret per decision; positive values favor the second method.
+
+| Drift / noise | Comparison | Paired mean difference [95% interval] |
+| --- | --- | ---: |
+| 0 / 0.5 | $\alpha=0.03$ − SA | 0.00031 [−0.00084, 0.00146] |
+| 0.03 / 0.5 | $\alpha=0.5$ − $\alpha=0.3$ | 0.00035 [−0.00329, 0.00398] |
+| 0.003 / 2 | SA − $\alpha=0.03$ | 0.00434 [0.00013, 0.00855] |
+| 0 / 2 | $\alpha=0.01$ − $\alpha=0.03$ (constants only) | 0.00156 [−0.00253, 0.00566] |
+| 0.001 / 2 | $\alpha=0.01$ − $\alpha=0.03$ (constants only) | 0.00265 [−0.00157, 0.00687] |
+
+The first two point-estimate winners are not clearly separated from their
+runner-up by these intervals. The drift-0.003/noise-2 comparison has only
+marginal unadjusted evidence; it should not be treated as a firm ranking after
+searching this many comparisons. The last two rows qualify the constant-rate
+panel: sample averages win overall in both conditions, while the ranking
+between the two best constants is uncertain. Intervals containing zero are
+not evidence that two methods are equivalent.
+
+#### Preselected learning curves and secondary outcomes
+
+![Learning curves for the three conditions chosen before running](results/memory_sweep/learning_curves.png)
+
+The following are the sample-average baseline and the best tested constant
+rate in each preselected condition. Primary-outcome `±` values are 95% confidence
+half-widths. The other columns are means; intervals for all four outcomes and
+every learner are in `summary.csv` and the condition JSON files.
+
+| Drift / noise | Learner | Final regret/decision | Total regret | Final reward | Final optimal frequency |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 0 / 1 | Sample average | 0.1561 ± 0.0023 | 1,659.5 | 1.3850 | 86.6% |
+| 0 / 1 | $\alpha=0.03$ | 0.1592 ± 0.0022 | 2,146.6 | 1.3810 | 84.6% |
+| 0.01 / 1 | Sample average | 0.4052 ± 0.0144 | 3,113.7 | 1.7492 | 59.1% |
+| 0.01 / 1 | $\alpha=0.1$ | 0.2358 ± 0.0031 | 2,229.6 | 1.9200 | 80.9% |
+| 0.01 / 2 | Sample average | 0.4021 ± 0.0145 | 3,288.5 | 1.7543 | 59.7% |
+| 0.01 / 2 | $\alpha=0.03$ | 0.2483 ± 0.0040 | 2,592.8 | 1.9083 | 77.4% |
+
+At drift 0.01/noise 1, rate 0.1 reduces the primary outcome relative to sample
+averages by **−0.1694 [−0.1840, −0.1548]**. At drift 0.01/noise 2, rate 0.03
+reduces it by **−0.1538 [−0.1683, −0.1392]**. Under zero drift/noise 1, sample
+averages instead beat rate 0.03 by **0.00306 [0.00166, 0.00446]** in regret per
+decision. The distinction between retaining useful evidence and retaining
+outdated evidence changes with the environment.
+
+The smallest constant rate, **0.003, never won**, even with zero drift. Its
+learning curves show slow improvement within this horizon. A small rate also
+retains the zero initial estimate and updates an infrequently visited action
+slowly; it is not the same as a well-established estimate with low variance.
+Sample averages take a full first update, then gradually reduce their step
+size. This experiment does not separate initialization effects from later
+tracking error, so the finite-horizon result does not show that long memory
+is intrinsically bad in a stationary environment.
+
+### Compact data
+
+[summary.csv](results/memory_sweep/summary.csv) contains all 105 condition–method
+rows, with all four outcomes, 95% intervals, and paired differences against
+sample averages. Each condition's JSON also records the best tested method,
+best tested constant rate, runner-up comparisons, task SDs, and task quantiles.
+Each `.npz` contains `task_outcomes` with axes **method × task × outcome**:
+final regret per decision, total regret, final reward, final optimal fraction.
+`outcome_names` and `method_names` label these axes. The other arrays contain
+100-step bin means/standard errors and plotting coordinates. We retain no
+large task-by-time-by-action cube and no full per-task trajectories for the sweep.
+
 ## Read the code and saved results
 
 Start with [bandits.py](bandits.py): `Agent.act` selects actions and `Agent.learn`
@@ -308,6 +553,12 @@ implements the two update rules. `Environment` owns the hidden world;
 across independent tasks while the time loop remains explicit.
 [run_experiments.py](run_experiments.py) sets up the three runs and summarizes
 them; [figures.py](figures.py) makes the plots.
+
+[run_memory_sweep.py](run_memory_sweep.py) adds the drift–noise sweep using the
+same `simulate` loop. [memory_sweep_figures.py](memory_sweep_figures.py) plots it.
+The sweep saves separate results under `results/memory_sweep/`; the original
+result files remain unchanged. Its brief checks are in
+[memory_sweep_checks.py](memory_sweep_checks.py).
 
 [sanity_checks.py](sanity_checks.py) checks only scientific essentials: exact
 updates, random ties, tied optima, reward/drift scales, permutation timing and
@@ -358,16 +609,15 @@ already an artificial life system. The learner stores action-value estimates;
 it does not learn a world model or predict environmental transitions. Here the
 world changes independently of the learner's choices.
 
-## One worthwhile next experiment
+## One next scientific question
 
-Sweep the drift standard deviation and learning rate together, keeping reward
-noise and $\epsilon=0.1$ fixed. Start every condition from shared
-$\mathcal N(0,1)$ values so that zero drift provides a meaningful stationary
-control. Compare sample averages and several constant rates using paired
-final-window reward and regret. This would locate the crossover where retaining
-old observations stops helping, and test whether faster environmental change
-favors shorter memory. The present three rates and two kinds of change cannot
-establish a universally best learning rate.
+Do faster changes favor larger learning rates when the spread of action values
+is held fixed? A follow-up could use
+$q_{t+1}(a)=\rho q_t(a)+\sqrt{1-\rho^2}\,\xi_{t,a}$, initialized from
+$\mathcal N(0,1)$. This keeps marginal variance at 1 while varying temporal
+persistence through $\rho$. Fix reward noise and exploration, then repeat the
+learning-rate comparison. It would help separate the effect of change speed
+from the growing action-value gaps in an unrestricted random walk.
 
 ## Reference implementation and license
 

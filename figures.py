@@ -44,7 +44,7 @@ def plot_experiment(data, config, output):
     fig.legend(handles, labels, ncol=len(labels), loc="upper center",
                bbox_to_anchor=(0.5, 0.957), fontsize=9)
     fig.suptitle(TITLES[config["kind"]], fontsize=15, y=0.99)
-    if config["kind"] == "random_walk":
+    if config["kind"] == "random_walk" and config.get("initialization") in (None, "zeros"):
         axes[1].text(0.02, 0.95, "At step 0 all actions tie: 100% optimal (raw data).",
                      transform=axes[1].transAxes, va="top", fontsize=9)
     fig.text(0.5, 0.018,

@@ -1,0 +1,123 @@
+{
+  "started_utc": "2026-09-28T14:45:53.467273+00:00",
+  "master_seed": 20260928,
+  "experiment_id": 3,
+  "seeds": {
+    "environment": {
+      "initial": 8678426614222128879,
+      "rewards": 16840941346529345473,
+      "drift": 16100678074415625099,
+      "permutation": 15139095382864921861
+    },
+    "agents": {
+      "sample average": 18067217310617868644,
+      "alpha=0.003": 8607769086363803423,
+      "alpha=0.01": 10309386400897781091,
+      "alpha=0.03": 16247651305178815725,
+      "alpha=0.1": 15849023714337922317,
+      "alpha=0.3": 4381630544888927901,
+      "alpha=0.5": 14043524104545451893
+    }
+  },
+  "drifts": [
+    0,
+    0.001,
+    0.003,
+    0.01,
+    0.03
+  ],
+  "reward_stds": [
+    0.5,
+    1.0,
+    2.0
+  ],
+  "methods": [
+    {
+      "name": "sample average",
+      "epsilon": 0.1,
+      "alpha": null
+    },
+    {
+      "name": "alpha=0.003",
+      "epsilon": 0.1,
+      "alpha": 0.003
+    },
+    {
+      "name": "alpha=0.01",
+      "epsilon": 0.1,
+      "alpha": 0.01
+    },
+    {
+      "name": "alpha=0.03",
+      "epsilon": 0.1,
+      "alpha": 0.03
+    },
+    {
+      "name": "alpha=0.1",
+      "epsilon": 0.1,
+      "alpha": 0.1
+    },
+    {
+      "name": "alpha=0.3",
+      "epsilon": 0.1,
+      "alpha": 0.3
+    },
+    {
+      "name": "alpha=0.5",
+      "epsilon": 0.1,
+      "alpha": 0.5
+    }
+  ],
+  "curve_conditions": [
+    [
+      0,
+      1.0
+    ],
+    [
+      0.01,
+      1.0
+    ],
+    [
+      0.01,
+      2.0
+    ]
+  ],
+  "source_sha256": {
+    "bandits.py": "c03b47941a006bb243b02a73aac0d01694f1ec178a786416b3c075d63f109ced",
+    "run_memory_sweep.py": "e5d2a147f4967a8d3f7044419dc242b58048f2a46e077e53cb616b72d0b4c700",
+    "run_experiments.py": "2c6eb6d3b088737bedd57c9ee8f54f236c898a608be6d634cfbf48bb9701f911"
+  },
+  "python": "3.10.12",
+  "numpy": "1.26.4",
+  "matplotlib": "3.10.9",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "rng": "NumPy default_rng / PCG64; SeedSequence-derived uint64 seeds",
+  "pairing": "Same environment and per-method agent streams restart in every condition; environment and agents use separate streams",
+  "primary_outcome": "Mean dynamic pseudo-regret per decision, steps 9000:10000",
+  "uncertainty": "Across-task mean +/- 1.96 SE; exploratory pointwise paired comparisons, no selection or multiplicity adjustment",
+  "conditions": [
+    "drift_0_noise_0.5",
+    "drift_0.001_noise_0.5",
+    "drift_0.003_noise_0.5",
+    "drift_0.01_noise_0.5",
+    "drift_0.03_noise_0.5",
+    "drift_0_noise_1",
+    "drift_0.001_noise_1",
+    "drift_0.003_noise_1",
+    "drift_0.01_noise_1",
+    "drift_0.03_noise_1",
+    "drift_0_noise_2",
+    "drift_0.001_noise_2",
+    "drift_0.003_noise_2",
+    "drift_0.01_noise_2",
+    "drift_0.03_noise_2"
+  ],
+  "completed_conditions": 15,
+  "simulation_seconds": 894.116624888964,
+  "condition_pipeline_seconds": 894.691382628982,
+  "plot_seconds": 3.2117638080380857,
+  "invocation_seconds": 897.9510870709782,
+  "invocation_mode": "full",
+  "finished_utc": "2026-09-28T15:00:51.417770+00:00",
+  "plot_source_sha256": "db1ec7d8b55b38a78a17b51df62aa6d061738a26cae9f693487d57b2b974f37c"
+}

@@ -63,14 +63,21 @@ class Agent:
 class Environment:
     """Shared potential outcomes; no agent can access this object."""
 
-    def __init__(self, kind, tasks, arms, seeds, drift_std=0.01, change_step=5000):
+    def __init__(self, kind, tasks, arms, seeds, drift_std=0.01, change_step=5000,
+                 reward_std=1.0, initialization=None):
         self.kind = kind
         self.drift_std = drift_std
+        self.reward_std = reward_std
         self.change_step = change_step
         self.reward_rng = np.random.default_rng(seeds["rewards"])
         self.drift_rng = np.random.default_rng(seeds["drift"])
         initial_rng = np.random.default_rng(seeds["initial"])
-        self.q = (np.zeros((tasks, arms)) if kind == "random_walk"
+        # Keep the original experiment defaults; the sweep explicitly uses normal.
+        if initialization is None:
+            initialization = "zeros" if kind == "random_walk" else "normal"
+        if initialization not in ("zeros", "normal"):
+            raise ValueError("initialization must be 'zeros' or 'normal'")
+        self.q = (np.zeros((tasks, arms)) if initialization == "zeros"
                   else initial_rng.normal(size=(tasks, arms)))
         permutation_rng = np.random.default_rng(seeds["permutation"])
         # A separate, uniform permutation per task; fixed points are allowed.
@@ -84,11 +91,12 @@ class Environment:
 
     def potential_rewards(self):
         # One independent noise draw per (task, step, action), shared by methods.
-        return self.q + self.reward_rng.normal(size=self.q.shape)
+        return self.q + self.reward_std * self.reward_rng.standard_normal(self.q.shape)
 
     def after_interaction(self):
         if self.kind == "random_walk":
-            self.q += self.drift_rng.normal(0, self.drift_std, self.q.shape)
+            # Consume the same draws even when drift_std is zero.
+            self.q += self.drift_std * self.drift_rng.standard_normal(self.q.shape)
 
 
 def make_seeds(master, experiment_id, methods):
@@ -103,7 +111,8 @@ def make_seeds(master, experiment_id, methods):
     # Explicit IDs keep streams tied to methods rather than list positions.
     ids = {"epsilon=0": 100, "epsilon=0.01": 101, "epsilon=0.1": 102,
            "sample average": 200, "alpha=0.01": 201, "alpha=0.1": 202,
-           "alpha=0.5": 203}
+           "alpha=0.5": 203, "alpha=0.003": 204, "alpha=0.03": 205,
+           "alpha=0.3": 206}
     return {"environment": environment,
             "agents": {m.name: seed(ids[m.name]) for m in methods}}
 
@@ -131,7 +140,9 @@ def simulate(config, methods, seeds):
     tasks, steps, arms = (config[k] for k in ("tasks", "steps", "arms"))
     width = config["bin_width"]
     env = Environment(config["kind"], tasks, arms, seeds["environment"],
-                      config["drift_std"], config["change_step"])
+                      config["drift_std"], config["change_step"],
+                      reward_std=config.get("reward_std", 1.0),
+                      initialization=config.get("initialization"))
     agents = [Agent(tasks, arms, m, seeds["agents"][m.name]) for m in methods]
     rows = np.arange(tasks)
     shape = (len(methods), steps, 3)
