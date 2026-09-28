@@ -781,8 +781,8 @@ isolated lifetime counts as the cause: both UCB learners retain those counts.
 
 ![Sudden-change exploration comparison](results/exploration/sudden_change.png)
 
-C **does not support the prediction that optimism must lose its usefulness
-after an unannounced change**. Learner 4 has the highest mean reward in the
+C gives **mixed evidence for the optimism hypothesis**. The population results
+show no post-change disadvantage for optimistic greedy here: learner 4 has the highest mean reward in the
 first 1,000 post-change decisions (**1.448**) and over all 5,000 afterward
 (**1.496**), and the lowest regret in both windows. This is a measured window
 comparison; we did **not** measure a fastest recovery time.
