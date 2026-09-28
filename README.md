@@ -28,6 +28,14 @@ epsilon-greedy has the lowest mean under gradual change, close to our UCB
 variant. Optimistic greedy wins the sudden-change reward comparison, while
 the fixed-task trace shows how it can still miss a newly best action.
 
+The [hidden-improvement follow-up](#our-hidden-improvement-experiment-will-the-agent-explore-when-nothing-goes-wrong)
+now tests a new opportunity appearing while every other arm stays unchanged.
+It pairs that intervention with an unchanged control world and separates first
+exposure from learning. Optimistic greedy did not revisit the target in 79.9%
+of tasks during the post-change horizon. Epsilon 0.01 brought almost universal
+exposure but no clear primary-regret improvement; epsilon 0.1 reduced regret
+while imposing a larger reward cost in the unchanged world.
+
 ## Run it
 
 Use Python 3.10 or newer. From the repository root:
@@ -831,6 +839,324 @@ cube of every task's trajectories is stored. The 12 output files total about
 **10.9 MiB**; [manifest.json](results/exploration/manifest.json) records exact
 configuration, seeds, source hashes, timestamps, and measured runtime.
 
+## Our hidden-improvement experiment: will the agent explore when nothing goes wrong?
+
+**Will the agent find a better opportunity when its current choices do not
+get worse?** Optimistic greedy did well after our earlier permutation. That
+left an open question: did declining rewards from an old favorite help prompt
+switching? Here we create an improved alternative while leaving all other
+true values fixed. Individual rewards remain noisy; the intervention does
+not reduce any arm's expected reward.
+
+### Matched worlds and eight learners
+
+Both conditions have **2,000 independent tasks, ten arms, and 10,000 decisions**.
+Initial values are independent $\mathcal N(0,1)$ draws, and reward noise has
+standard deviation 1. For each task, the evaluator selects
+
+$$
+a^- = \arg\min_a q_0(a),\qquad M_0=\max_a q_0(a).
+$$
+
+**A: unchanged world.** Every true value remains $q_0(a)$ throughout.
+
+**B: hidden improvement, our extension.** Immediately before decision 5,000,
+set $q_{5000}(a^-)=M_0+0.5$, leaving every other arm unchanged. These values then
+remain fixed. The target is the initially worst arm, chosen independently of
+agent behavior and shared by all learners. Agents receive no notification,
+reset, target identity, true values, or other learners' observations.
+
+The two conditions reuse **identical initial values, potential reward-noise
+streams, and per-method learner random streams**. Within each world, methods
+share potential rewards but have separate learner streams. This is a matched
+control experiment; each task in A has its corresponding task in B.
+
+| ID | Selection rule | Update | $Q_0$ |
+| --- | --- | --- | ---: |
+| 1 | Epsilon-greedy, $\epsilon=0.1$ | Sample average | 0 |
+| 2 | Epsilon-greedy, $\epsilon=0.1$ | $\alpha=0.1$ | 0 |
+| 3 | Greedy, $\epsilon=0$ | $\alpha=0.1$ | 0 |
+| 4 | Optimistic greedy, $\epsilon=0$ | $\alpha=0.1$ | 5 |
+| 5 | Textbook UCB, $c=2$ | Sample average | 0 |
+| 6 | **Our UCB variant**, $c=2$, lifetime counts | $\alpha=0.1$ | 0 |
+| 7 | Optimistic epsilon-greedy, $\epsilon=0.01$ | $\alpha=0.1$ | 5 |
+| 8 | Optimistic epsilon-greedy, $\epsilon=0.1$ | $\alpha=0.1$ | 5 |
+
+Learners 1–6 retain the preceding experiment's settings. **4, 7, and 8 isolate
+the exploration rate** at the same initialization and learning rate. UCB still
+explicitly prioritizes untried actions and uses ordinary lifetime counts;
+learner 6's bonuses are not claimed to be calibrated confidence bounds under
+change. Epsilon determines sampling; alpha determines how much a received
+reward changes its action's estimate. No estimate updates without a visit.
+
+### Outcomes, exposure, and censoring
+
+The primary outcome is mean dynamic pseudo-regret per decision over
+**[5000, 10000)**. Secondary windows are **[5000, 6000)** for first-1,000 regret
+and target frequency, **[9000, 10000)** for final reward, optimal frequency,
+and target frequency, and **[0, 10000)** for total regret. Pre-change target
+counts use **[0, 5000)**. A uses the same windows despite having no intervention.
+
+For each task and learner, record the first post-change visit delay
+
+$$
+D=\min\{t\geq5000:A_t=a^-\}-5000.
+$$
+
+Delay **0** is an immediate visit. No visit before decision 10,000 is
+**right-censored**, stored as `-1`, not as an observed delay. Within the first
+$h$ decisions means $0\leq D<h$. The still-unvisited curve $S(k)$ is the fraction
+with no visit after $k$ completed post-change decisions: $S(0)=1$, and a delay-0
+visit first lowers $S(1)$. All tasks share the same 5,000-decision observation
+horizon, so this empirical curve needs no correction for staggered censoring.
+
+Median delay is the first empirical delay at which at least half the tasks
+have visited. We report **not reached** if fewer than half visit within the
+horizon. We never average just the observed delays and call that the population
+mean. First exposure is not evidence that the learner has identified or will
+exploit the best action; later selections and regret address that question.
+
+Means and paired differences use **independent tasks**, with approximate 95%
+intervals from mean ± $1.96\,\mathrm{SEM}$. Visit probabilities and the
+still-unvisited curve use pointwise **Wilson intervals**, including when the
+observed proportion is 0% or 100%. No multiplicity adjustment is applied.
+The ± entries below are interval half-widths, not task standard deviations.
+Task SDs and quantiles are retained in the JSON summaries.
+
+### Measured performance
+
+**A: unchanged world.** Primary and secondary outcomes:
+
+| Learner | Post regret / decision | First 1,000 regret | Final reward | Final optimal (%) | Total regret |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.1560 ± 0.0023 | 156.9 ± 2.4 | 1.382 ± 0.024 | 87.5 ± 0.7 | 1653.0 ± 23.4 |
+| 2 | 0.1760 ± 0.0018 | 175.5 ± 2.2 | 1.361 ± 0.025 | 78.3 ± 0.9 | 1869.2 ± 21.7 |
+| 3 | 0.2117 ± 0.0171 | 223.8 ± 17.9 | 1.338 ± 0.023 | 62.3 ± 2.1 | 2351.0 ± 173.7 |
+| 4 | 0.0134 ± 0.0014 | 15.2 ± 1.9 | 1.528 ± 0.027 | 91.1 ± 1.2 | 391.2 ± 10.4 |
+| 5 | 0.0083 ± 0.0003 | 10.3 ± 0.5 | 1.531 ± 0.026 | 95.4 ± 0.6 | 275.4 ± 4.5 |
+| 6 | 0.0468 ± 0.0024 | 53.8 ± 4.1 | 1.499 ± 0.027 | 84.9 ± 1.4 | 859.8 ± 17.5 |
+| 7 | 0.0304 ± 0.0010 | 32.1 ± 1.8 | 1.509 ± 0.026 | 89.1 ± 1.1 | 542.5 ± 7.9 |
+| 8 | 0.1753 ± 0.0019 | 175.8 ± 2.2 | 1.362 ± 0.025 | 78.8 ± 0.8 | 1929.8 ± 18.1 |
+
+**B: hidden improvement.** The same outcomes and windows:
+
+| Learner | Post regret / decision | First 1,000 regret | Final reward | Final optimal (%) | Total regret |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 0.6201 ± 0.0020 | 620.8 ± 2.1 | 1.418 ± 0.025 | 1.0 ± 0.0 | 3973.9 ± 22.1 |
+| 2 | 0.2955 ± 0.0030 | 606.1 ± 3.8 | 1.858 ± 0.025 | 88.7 ± 0.2 | 2467.1 ± 26.4 |
+| 3 | 0.7007 ± 0.0173 | 720.3 ± 17.9 | 1.355 ± 0.023 | 2.8 ± 0.7 | 4796.4 ± 173.3 |
+| 4 | 0.4547 ± 0.0058 | 498.6 ± 3.4 | 1.620 ± 0.027 | 18.0 ± 1.7 | 2598.1 ± 30.2 |
+| 5 | 0.4118 ± 0.0070 | 484.5 ± 4.0 | 1.687 ± 0.026 | 30.6 ± 2.0 | 2292.9 ± 34.8 |
+| 6 | 0.3152 ± 0.0083 | 476.5 ± 6.3 | 1.843 ± 0.027 | 62.4 ± 2.1 | 2201.7 ± 43.3 |
+| 7 | 0.4521 ± 0.0054 | 523.9 ± 2.3 | 1.679 ± 0.026 | 32.1 ± 1.9 | 2651.2 ± 27.5 |
+| 8 | 0.2978 ± 0.0030 | 608.8 ± 3.7 | 1.856 ± 0.025 | 88.5 ± 0.2 | 2542.5 ± 22.8 |
+
+Textbook UCB (5) has the lowest mean primary regret in A. In B, learner 2 has
+the lowest mean, **0.2955**, closely followed by optimistic epsilon-greedy 8 at
+**0.2978**. An additional paired comparison, 2 minus 8, is **−0.00230
+[−0.00475, +0.00015]**: this run does not clearly distinguish those two settings.
+Learner 6 has the lowest mean **total** regret in B, including the stationary
+first half. Choosing a different measurement window can change the ranking.
+These are results for the specified settings and horizons, not whole algorithm
+families or universal optimal parameters.
+
+![Unchanged-world curves](results/hidden_improvement/unchanged.png)
+
+![Hidden-improvement curves](results/hidden_improvement/hidden_improvement.png)
+
+The hidden improvement does not cause a collapse in received reward. Yet
+optimal-action frequency drops immediately because the benchmark's best arm
+has changed. Continuing to earn the old reward can now mean missing a better
+opportunity. Cumulative regret reveals that loss even without an obvious
+negative reward signal. The curves use 100-decision bins with task-level
+intervals; no bin straddles the intervention.
+
+### Was the initially worst arm actually neglected?
+
+Pre-change visits to the target are **identical across the matched conditions**:
+
+| Learner | Mean visits ± 95% CI | Median | Task 10th–90th percentiles | Never visited before (%) |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 50.30 ± 0.31 | 50 | 41–60 | 0.00 |
+| 2 | 50.13 ± 0.31 | 50 | 41–59 | 0.00 |
+| 3 | 0.61 ± 0.04 | 0 | 0–1 | 56.15 |
+| 4 | 11.17 ± 0.15 | 11 | 7–16 | 0.00 |
+| 5 | 4.81 ± 0.13 | 4 | 2–8 | 0.00 |
+| 6 | 11.89 ± 0.30 | 10 | 6–19 | 0.00 |
+| 7 | 15.28 ± 0.16 | 15 | 11–20 | 0.00 |
+| 8 | 57.59 ± 0.32 | 57 | 49–67 | 0.00 |
+
+Every method sampled this arm much less than the **500 visits** expected under
+uniform sampling over 5,000 decisions. The largest mean was 57.59 visits, only
+1.15% of decisions. However, rarely sampled does not mean never tried:
+optimistic greedy (4) had visited it in every task, averaging **11.17** visits.
+Textbook UCB had also visited it in every task, averaging **4.81**. Ordinary
+greedy (3) had never visited it in **56.15%** of tasks. Thus the later failures
+include both failure to revisit a known poor option and, for learner 3, failure
+to sample some options at all.
+
+### First exposure and later selections are different outcomes
+
+Post-change first-visit probabilities and delays also match **exactly** between
+A and B, task by task. Until the first target visit, each matched learner gets
+identical rewards and makes identical decisions. It cannot react to an improvement
+it has not observed. This equality was checked in the completed full runs.
+
+| Learner | Within 100 (%) | 500 (%) | 1,000 (%) | 5,000 (%) | Unvisited at end (%) [95% CI] | Median delay |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | 63.00 | 99.05 | 99.95 | 100.00 | 0.00 [0.00, 0.19] | 69 |
+| 2 | 63.50 | 99.50 | 100.00 | 100.00 | 0.00 [0.00, 0.19] | 67 |
+| 3 | 0.10 | 0.60 | 1.00 | 3.35 | 96.65 [95.77, 97.35] | Not reached |
+| 4 | 0.50 | 3.20 | 5.70 | 20.10 | 79.90 [78.09, 81.60] | Not reached |
+| 5 | 1.25 | 5.50 | 9.80 | 33.70 | 66.30 [64.20, 68.34] | Not reached |
+| 6 | 2.55 | 11.70 | 21.80 | 65.75 | 34.25 [32.20, 36.36] | 3011 |
+| 7 | 9.70 | 41.50 | 63.50 | 99.85 | 0.15 [0.05, 0.44] | 666 |
+| 8 | 63.90 | 99.45 | 100.00 | 100.00 | 0.00 [0.00, 0.19] | 67 |
+
+All four visit probabilities have Wilson intervals in the saved summaries;
+the table shows intervals for the final unvisited fraction. All delays are
+zero-based. **Not reached** means a censored median, not an omitted slow task.
+For optimistic greedy, **79.9% [78.1%, 81.6%]** of tasks never revisited the
+target during the post-change horizon. Adding epsilon 0.01 reduced that to
+**0.15%**, and epsilon 0.1 to **0 observed tasks** (95% upper limit **0.19%**).
+
+![Fraction still unvisited](results/hidden_improvement/still_unvisited.png)
+
+The following percentages measure actual target selections, averaged within
+tasks, rather than whether a task had at least one visit. In B the target is
+the unique optimum, so its final frequency equals final optimal-action frequency.
+
+| Learner | A: first 1,000 (%) | A: last 1,000 (%) | B: first 1,000 (%) | B: last 1,000 (%) |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 1.0097 ± 0.0137 | 1.0039 ± 0.0138 | 1.01 ± 0.01 | 1.00 ± 0.01 |
+| 2 | 1.0074 ± 0.0140 | 1.0008 ± 0.0138 | 7.16 ± 0.56 | 88.74 ± 0.16 |
+| 3 | 0.0017 ± 0.0010 | 0.0007 ± 0.0005 | 0.53 ± 0.26 | 2.80 ± 0.71 |
+| 4 | 0.0069 ± 0.0013 | 0.0032 ± 0.0009 | 2.83 ± 0.60 | 17.97 ± 1.66 |
+| 5 | 0.0115 ± 0.0018 | 0.0060 ± 0.0012 | 4.98 ± 0.79 | 30.57 ± 1.98 |
+| 6 | 0.0396 ± 0.0054 | 0.0230 ± 0.0051 | 11.60 ± 1.13 | 62.44 ± 2.07 |
+| 7 | 0.1004 ± 0.0044 | 0.0985 ± 0.0043 | 0.93 ± 0.29 | 32.13 ± 1.94 |
+| 8 | 1.0011 ± 0.0137 | 0.9964 ± 0.0142 | 6.75 ± 0.53 | 88.48 ± 0.19 |
+
+**Observed:** sample-average epsilon-greedy (1) reached the target in every task,
+with median first delay **69**, yet its final target frequency was only **1.00%**.
+Constant-alpha epsilon-greedy (2) had a similar first-delay median (**67**), but
+its final target frequency was **88.74%**. Their first 1,000 regrets were both
+large; the constant-alpha learner's advantage developed after exposure.
+
+**Explanation from the update rules:** learner 1 brought about 50 old target
+observations into the change. After exactly 50 visits, its next reward receives
+weight $1/51\approx0.0196$, compared with $0.1$ for learner 2. Repeated good new
+rewards must counter a long history of bad old rewards. Persistent random
+visits therefore need not translate promptly into greedy selections. Alpha's
+memory is still measured in **visits to that arm**, not elapsed decisions.
+
+**Observed:** optimistic epsilon-greedy 7 reached the target in **99.85%** of
+tasks but selected it on only **32.13%** of final-window decisions. Its final
+selection frequency improved over optimistic greedy, but its primary regret
+was almost unchanged. Reaching an opportunity and using it effectively are
+separate accomplishments.
+
+### The cost and benefit of persistent exploration
+
+These planned comparisons are **7 minus 4** and **8 minus 4**, paired within
+each task in each world. Negative regret differences and positive reward
+differences favor the persistently exploring learner. Both outcomes use
+[5000, 10000); the full summaries contain paired differences for every outcome.
+
+| World / pair | Δ post regret per decision [95% CI] | Δ post reward per decision [95% CI] |
+| --- | --- | --- |
+| A: 7 − 4 | +0.0170 [+0.0156, +0.0185] | -0.0172 [-0.0186, -0.0158] |
+| A: 8 − 4 | +0.1620 [+0.1595, +0.1644] | -0.1621 [-0.1645, -0.1596] |
+| B: 7 − 4 | -0.0026 [-0.0102, +0.0051] | +0.0026 [-0.0051, +0.0102] |
+| B: 8 − 4 | -0.1569 [-0.1633, -0.1504] | +0.1568 [+0.1504, +0.1633] |
+
+![Exploration reward cost and benefit](results/hidden_improvement/exploration_cost_benefit.png)
+
+Epsilon 0.1 imposed an unchanged-world reward cost of **0.1621 per decision**,
+but gave a hidden-improvement reward benefit of **0.1568**, relative to
+optimistic greedy. Epsilon 0.01 cost **0.0172** in A, while its benefit in B
+was only **0.0026 [−0.0051, +0.0102]**, unresolved at this precision. Thus the
+expectation that more first exposures would necessarily reduce regret during
+this horizon was **not supported for epsilon 0.01**. The first 1,000 post-change
+regret was actually higher for both exploring optimistic settings than for 4;
+the benefit of epsilon 0.1 emerged over the longer post-change window.
+
+A proposed explanation for learner 7's limited benefit is that rare visits
+provide few updates, while extra pre-change visits have also reduced its
+remaining optimistic estimates. This experiment changes epsilon throughout
+both halves, so it does not separately identify those two contributions.
+The measured conclusion is narrower: almost universal exposure did not give
+a clear average reward or regret improvement within 5,000 decisions.
+
+### One fixed task, and what the earlier permutation can tell us
+
+![Fixed task 0 target-action raster](results/hidden_improvement/task0_action_raster.png)
+
+Task 0 and **[4500, 10000)** were fixed before inspecting results. Its target is
+arm **8**, raised from **−1.785** to **2.132**; all other values stay unchanged.
+Learners 3, 4, and 5 never visit it after the change. Learner 1 first visits at
+delay **99** but selects it only **11** times in the final 1,000 decisions.
+Learner 2 first visits at delay **20** and selects it **893** times in that
+final window. Learner 7 visits at delay **220** and eventually selects it
+**995** times in the final window. This last result is stronger than learner
+7's population average, illustrating why a fixed trace is an example rather
+than evidence about the typical task.
+
+Optimistic greedy's success under the earlier permutation did not carry over
+to reliably discovering this hidden improvement. That is consistent with the
+idea that deterioration can help prompt switching, but it does **not** isolate
+that cause. The experiments have different change mechanisms, seeds, and
+post-change value gaps. They are **not a matched causal comparison of one
+factor**. The matched causal intervention here is A versus B; comparisons
+between the old permutation and this experiment remain comparisons between
+whole setups. Noise can still induce switching even when true values do not
+deteriorate, as the 20.1% exposure rate for optimistic greedy shows.
+
+### Reproduction and compact outputs
+
+Using the Python environment described above:
+
+```bash
+python hidden_improvement_checks.py
+python run_hidden_improvement.py
+# Redraw only, using the saved arrays:
+python run_hidden_improvement.py --plot-only
+```
+
+The full run on **2026-09-28** used master seed **20260928** and new experiment
+ID **7**, reused for both conditions, with new stable method IDs **304 and 305**.
+Earlier method IDs and defaults are preserved. Each completed condition is
+saved before starting the next. Use `--output` to save a separate run; the
+normal command overwrites only this experiment's directory.
+
+The full run executed **320 million learner–task decisions** in **143.74 s**,
+including saving and plotting. Simulations took **63.17 s** (A) and **76.96 s**
+(B), using Python 3.10.12, NumPy 1.26.4, Matplotlib 3.10.9 on Linux/WSL2.
+The short checks covered the intervention, unchanged non-target values,
+matched noise, an immediate visit, the final possible visit, censoring, and
+paired behavior. No earlier experiment was rerun; all **62** previous result
+files remain unchanged.
+
+[run_hidden_improvement.py](run_hidden_improvement.py) reuses `simulate`, adds
+two method settings, and summarizes exposure and task outcomes.
+[hidden_improvement_figures.py](hidden_improvement_figures.py) creates the five
+figures. [hidden_improvement_checks.py](hidden_improvement_checks.py) contains
+the short checks. `TargetVisits` in [bandits.py](bandits.py) records actions for
+the evaluator without giving the target to an agent; `Environment` applies
+the one-arm intervention.
+
+The ten files under [`results/hidden_improvement/`](results/hidden_improvement/)
+total about **5.7 MiB**. Each `.npz` contains `task_outcomes` with axes
+**method × independent task × outcome**, labeled by `method_names` and
+`outcome_names`. It also keeps per-task initial values, target IDs, pre-change
+counts, first-delay/censoring records, first/last-window target counts,
+100-decision plot statistics, and the full task-0 trace. Redundant unbinned
+curves and window summaries are omitted; no full task-by-time-by-action cube
+is stored. The two JSON summaries contain every requested outcome, uncertainty,
+median status, and paired comparisons against optimistic greedy.
+[manifest.json](results/hidden_improvement/manifest.json) records configuration,
+seeds, versions, source hashes, runtime, and the subsequent figures-only redraw.
+
 ## Read the code and saved results
 
 Start with [bandits.py](bandits.py): `Agent.act` selects actions and `Agent.learn`
@@ -897,13 +1223,13 @@ world changes independently of the learner's choices.
 
 ## One next scientific question
 
-**Can an agent discover an improving neglected arm when its current favorite
-does not get worse?** After 5,000 stationary decisions, raise the initially
-worst arm to 0.5 above the old maximum while leaving every other true value
-unchanged. Give no notification. Compare the same six learners, measuring
-post-change regret and the delay until the first visit to the improved arm.
-This would test whether the strong optimistic-greedy result depended on a
-permutation lowering the old favorite enough to trigger new sampling.
+**Does epsilon 0.01 become worthwhile when the new opportunity lasts longer?**
+Keep the matched unchanged and hidden-improvement worlds, but compare post-change
+horizons of 5,000, 10,000, and 50,000 decisions. Measure regret per decision,
+target selection, and censored exposure over each horizon. Rare exploration
+may need more time to supply enough learning updates, while its ongoing cost
+is lower than epsilon 0.1. Whether that eventually changes the ranking is a
+hypothesis to test, not a conclusion from the present run.
 
 ## Reference implementation and license
 

@@ -1,0 +1,138 @@
+{
+  "started_utc": "2026-09-28T16:56:07.459412+00:00",
+  "master_seed": 20260928,
+  "experiment_id": 7,
+  "seeds": {
+    "environment": {
+      "initial": 11921976245313250942,
+      "rewards": 6978036093430855686,
+      "drift": 14579566855902043533,
+      "permutation": 6164445667278523480
+    },
+    "agents": {
+      "sample average": 2871710374428030351,
+      "alpha=0.1": 13714752320969203380,
+      "greedy alpha=0.1": 15647954537668785592,
+      "optimistic greedy": 9966341248400211026,
+      "UCB sample average": 7210416700060944603,
+      "UCB alpha=0.1 (variant)": 16890259981837279327,
+      "optimistic epsilon=0.01": 10468361833136939032,
+      "optimistic epsilon=0.1": 3853451110151803906
+    }
+  },
+  "methods": [
+    {
+      "name": "sample average",
+      "epsilon": 0.1,
+      "alpha": null,
+      "initial_estimate": 0.0,
+      "ucb_c": null
+    },
+    {
+      "name": "alpha=0.1",
+      "epsilon": 0.1,
+      "alpha": 0.1,
+      "initial_estimate": 0.0,
+      "ucb_c": null
+    },
+    {
+      "name": "greedy alpha=0.1",
+      "epsilon": 0.0,
+      "alpha": 0.1,
+      "initial_estimate": 0.0,
+      "ucb_c": null
+    },
+    {
+      "name": "optimistic greedy",
+      "epsilon": 0.0,
+      "alpha": 0.1,
+      "initial_estimate": 5.0,
+      "ucb_c": null
+    },
+    {
+      "name": "UCB sample average",
+      "epsilon": 0.0,
+      "alpha": null,
+      "initial_estimate": 0.0,
+      "ucb_c": 2.0
+    },
+    {
+      "name": "UCB alpha=0.1 (variant)",
+      "epsilon": 0.0,
+      "alpha": 0.1,
+      "initial_estimate": 0.0,
+      "ucb_c": 2.0
+    },
+    {
+      "name": "optimistic epsilon=0.01",
+      "epsilon": 0.01,
+      "alpha": 0.1,
+      "initial_estimate": 5.0,
+      "ucb_c": null
+    },
+    {
+      "name": "optimistic epsilon=0.1",
+      "epsilon": 0.1,
+      "alpha": 0.1,
+      "initial_estimate": 5.0,
+      "ucb_c": null
+    }
+  ],
+  "python": "3.10.12",
+  "numpy": "1.26.4",
+  "matplotlib": "3.10.9",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "rng": "NumPy default_rng / PCG64; SeedSequence-derived method IDs",
+  "pairing": "identical environment AND per-method learner streams across conditions",
+  "primary": "mean dynamic pseudo-regret per decision, [5000, 10000)",
+  "censoring": "delay -1: no visit in [5000,10000); no observed-only mean reported",
+  "survival": "S(k): fraction unvisited after k decisions; delay d is exposed at k=d+1",
+  "intervals": "task mean +/- 1.96 SEM; Wilson for visit proportions; no multiplicity correction",
+  "trace_selection": "task 0, raster [4500,10000), fixed before inspecting results",
+  "source_sha256": {
+    "bandits.py": "6e8162867e4b3bcef7e6483a94326dfe4370d196e77f0a4a70e475bee37f95fb",
+    "run_experiments.py": "2c6eb6d3b088737bedd57c9ee8f54f236c898a608be6d634cfbf48bb9701f911",
+    "run_exploration.py": "a3fea6b90fa3fbc768ded3cb3042ef9c10c74ef647b7e207bc396c4b23a65e3a",
+    "run_hidden_improvement.py": "1204cdf6fc8e016251b44f48951bf0afeead0fdc2204e1c04340a6be147aabe1",
+    "hidden_improvement_figures.py": "851fad9ac3d1a314d98f44502c17088795df979804aa68a03ea900e12239ce8e",
+    "exploration_figures.py": "250568cac3145f12d3be89d0392085daa2c41e28bfffc9e094f115570fb35098"
+  },
+  "conditions": {
+    "unchanged": {
+      "config": {
+        "kind": "unchanged",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 10000,
+        "bin_width": 100,
+        "drift_std": 0.0,
+        "change_step": 5000,
+        "initialization": "normal",
+        "reward_std": 1.0,
+        "improvement_gap": 0.5
+      },
+      "simulation_seconds": 63.17383686895482
+    },
+    "hidden_improvement": {
+      "config": {
+        "kind": "hidden_improvement",
+        "tasks": 2000,
+        "arms": 10,
+        "steps": 10000,
+        "bin_width": 100,
+        "drift_std": 0.0,
+        "change_step": 5000,
+        "initialization": "normal",
+        "reward_std": 1.0,
+        "improvement_gap": 0.5
+      },
+      "simulation_seconds": 76.95957399904728
+    }
+  },
+  "total_seconds": 143.73622159298975,
+  "finished_utc": "2026-09-28T16:58:31.195255+00:00",
+  "figure_regeneration": {
+    "seconds": 3.1851935510057956,
+    "reason": "Move exposure legend clear of curves and share the cost-benefit axis scale; saved numerical data unchanged."
+  }
+}

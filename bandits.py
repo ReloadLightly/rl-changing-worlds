@@ -80,7 +80,7 @@ class Environment:
     """Shared potential outcomes; no agent can access this object."""
 
     def __init__(self, kind, tasks, arms, seeds, drift_std=0.01, change_step=5000,
-                 reward_std=1.0, initialization=None):
+                 reward_std=1.0, initialization=None, improvement_gap=0.5):
         self.kind = kind
         self.drift_std = drift_std
         self.reward_std = reward_std
@@ -95,6 +95,10 @@ class Environment:
             raise ValueError("initialization must be 'zeros' or 'normal'")
         self.q = (np.zeros((tasks, arms)) if initialization == "zeros"
                   else initial_rng.normal(size=(tasks, arms)))
+        if kind in ("unchanged", "hidden_improvement"):
+            # Chosen from the INITIAL world, never from any learner's behavior.
+            self.target = self.q.argmin(axis=1)
+            self.improved_value = self.q.max(axis=1) + improvement_gap
         permutation_rng = np.random.default_rng(seeds["permutation"])
         # A separate, uniform permutation per task; fixed points are allowed.
         self.permutation = permutation_rng.permuted(
@@ -104,6 +108,8 @@ class Environment:
     def before_action(self, step):
         if self.kind == "sudden_change" and step == self.change_step:
             self.q = np.take_along_axis(self.q, self.permutation, axis=1)
+        if self.kind == "hidden_improvement" and step == self.change_step:
+            self.q[np.arange(len(self.q)), self.target] = self.improved_value
 
     def potential_rewards(self):
         # One independent noise draw per (task, step, action), shared by methods.
@@ -130,7 +136,8 @@ def make_seeds(master, experiment_id, methods):
            "alpha=0.5": 203, "alpha=0.003": 204, "alpha=0.03": 205,
            "alpha=0.3": 206, "greedy alpha=0.1": 300,
            "optimistic greedy": 301, "UCB sample average": 302,
-           "UCB alpha=0.1 (variant)": 303}
+           "UCB alpha=0.1 (variant)": 303,
+           "optimistic epsilon=0.01": 304, "optimistic epsilon=0.1": 305}
     return {"environment": environment,
             "agents": {m.name: seed(ids[m.name]) for m in methods}}
 
@@ -148,6 +155,32 @@ def mean_sem(values, axis=0):
     )
 
 
+class TargetVisits:
+    """Evaluator-only exposure measurements; -1 means no post-change visit yet."""
+
+    def __init__(self, target, methods, change_step, steps):
+        self.target = target.copy()
+        self.change = change_step
+        self.steps = steps
+        shape = (methods, len(target))
+        self.pre = np.zeros(shape, dtype=np.int32)
+        self.first_delay = np.full(shape, -1, dtype=np.int32)
+        self.first_window = np.zeros(shape, dtype=np.int32)
+        self.last_window = np.zeros(shape, dtype=np.int32)
+
+    def record(self, method, step, actions):
+        hit = actions == self.target
+        if step < self.change:
+            self.pre[method] += hit
+        else:
+            new = hit & (self.first_delay[method] == -1)
+            self.first_delay[method, new] = step - self.change
+            if step < min(self.change + 1000, self.steps):
+                self.first_window[method] += hit
+            if step >= max(self.change, self.steps - 1000):
+                self.last_window[method] += hit
+
+
 def simulate(config, methods, seeds):
     """Run all methods on each shared world; retain aggregates and task 0.
 
@@ -160,9 +193,14 @@ def simulate(config, methods, seeds):
     env = Environment(config["kind"], tasks, arms, seeds["environment"],
                       config["drift_std"], config["change_step"],
                       reward_std=config.get("reward_std", 1.0),
-                      initialization=config.get("initialization"))
+                      initialization=config.get("initialization"),
+                      improvement_gap=config.get("improvement_gap", 0.5))
     agents = [Agent(tasks, arms, m, seeds["agents"][m.name]) for m in methods]
     rows = np.arange(tasks)
+    visits = None
+    if config["kind"] in ("unchanged", "hidden_improvement"):
+        visits = TargetVisits(env.target, len(methods), config["change_step"], steps)
+        initial_q = env.q.copy()
     shape = (len(methods), steps, 3)
     curve_mean, curve_sem = np.zeros(shape), np.zeros(shape)
     bin_shape = (len(methods), (steps + width - 1) // width, 3)
@@ -172,7 +210,7 @@ def simulate(config, methods, seeds):
 
     windows = {"all": (0, steps), "last_100": (max(0, steps - 100), steps),
                "last_1000": (max(0, steps - 1000), steps)}
-    if config["kind"] == "sudden_change":
+    if config["kind"] == "sudden_change" or visits is not None:
         change = config["change_step"]
         windows.update(pre_last_1000=(max(0, change - 1000), change),
                        post_first_1000=(change, min(steps, change + 1000)),
@@ -193,6 +231,8 @@ def simulate(config, methods, seeds):
         for i, agent in enumerate(agents):
             trace_estimates[i, t] = agent.q[0]  # Before observing this reward.
             actions = agent.act()
+            if visits is not None:
+                visits.record(i, t, actions)
             rewards = rewards_for_all_actions[rows, actions]
             optimal, regret = action_metrics(env.q, actions)
             cumulative[i] += regret
@@ -219,7 +259,7 @@ def simulate(config, methods, seeds):
         window_totals[:, w, :, :2] /= stop - start
     starts = np.arange(0, steps, width)
     ends = np.minimum(starts + width, steps) - 1
-    return dict(
+    data = dict(
         method_names=np.array([m.name for m in methods]),
         metric_names=np.array(["reward", "optimal_fraction", "cumulative_regret"]),
         curve_mean=curve_mean, curve_sem=curve_sem,
@@ -230,3 +270,9 @@ def simulate(config, methods, seeds):
         trace_estimates=trace_estimates, trace_actions=trace_actions,
         trace_rewards=trace_rewards,
     )
+    if visits is not None:
+        data.update(initial_q=initial_q, target_arms=visits.target,
+                    target_pre_visits=visits.pre, target_first_delay=visits.first_delay,
+                    target_first_1000_visits=visits.first_window,
+                    target_last_1000_visits=visits.last_window)
+    return data
