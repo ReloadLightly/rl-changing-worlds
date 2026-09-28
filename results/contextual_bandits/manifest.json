@@ -1,0 +1,100 @@
+{
+  "design": "Original experiment inspired by Sutton and Barto second edition, Section 2.9",
+  "started_utc": "2026-09-28T21:28:13.909526+00:00",
+  "experiment_id": 9,
+  "master_seed": 20260928,
+  "config": {
+    "tasks": 2000,
+    "arms": 10,
+    "contexts": 2,
+    "steps": 5000,
+    "reward_std": 1.0,
+    "bin_width": 50,
+    "final_window": 1000,
+    "initialization": "independent N(0,1)",
+    "context_probability": 0.5,
+    "trace_task": 0,
+    "trace_window": [
+      4000,
+      5000
+    ]
+  },
+  "methods": [
+    {
+      "name": "context-blind epsilon=0.1 alpha=0.1",
+      "contextual": false,
+      "epsilon": 0.1,
+      "alpha": 0.1,
+      "eta": null
+    },
+    {
+      "name": "contextual epsilon=0.1 alpha=0.1",
+      "contextual": true,
+      "epsilon": 0.1,
+      "alpha": 0.1,
+      "eta": null
+    },
+    {
+      "name": "contextual epsilon=0.1 sample average",
+      "contextual": true,
+      "epsilon": 0.1,
+      "alpha": null,
+      "eta": null
+    },
+    {
+      "name": "contextual gradient eta=0.1",
+      "contextual": true,
+      "epsilon": null,
+      "alpha": null,
+      "eta": 0.1
+    }
+  ],
+  "seeds": {
+    "environment": {
+      "initial": 12703320432275960854,
+      "rewards": 1835941721097776936,
+      "drift": 11063703862559857902,
+      "permutation": 11408689850025849390,
+      "true_contexts": 3097006610905854181,
+      "uninformative_cues": 12688030521494137716
+    },
+    "agents": {
+      "context-blind epsilon=0.1 alpha=0.1": 3378214710579412025,
+      "contextual epsilon=0.1 alpha=0.1": 2321200499616144672,
+      "contextual epsilon=0.1 sample average": 1812438554972589250,
+      "contextual gradient eta=0.1": 6096606373324899706
+    }
+  },
+  "python": "3.10.12",
+  "numpy": "1.26.4",
+  "matplotlib": "3.10.9",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "primary": "Mean reward over [4000,5000)",
+  "baseline_timing": "Per observed cue, current reward included; denominator is that cue's count",
+  "intervals": "Task mean +/- 1.96 SEM; paired task differences; exploratory, unadjusted",
+  "metrics": "All saved window metrics are means per decision, including regrets",
+  "matching": "Same task means, true contexts, potential noise and per-method RNG seeds; actions hashed across all tasks",
+  "hashes": "Step-major task-order uint8 actions/contexts; little-endian float64 potential noise",
+  "trace_selection": "Task 0, final 1000 decisions, fixed before seeing results",
+  "source_sha256": {
+    "contextual_bandits.py": "84cb17a0414731b8885843a9fc43522464986926a98bd7fc7e548244965654ed",
+    "run_contextual_bandits.py": "b642ecacd1a3283695951d761eb5102e4d980e12edc4f8d3df1917ced5aebb0c",
+    "contextual_figures.py": "555e34b67e60af1285aaf7cf0c24ff9fa84af5069f119ce193ea46624f27fc51",
+    "bandits.py": "00295a62aa01e2ae1699436cc4ce007b165312992e8fc00956848bc682ea7f30",
+    "gradient_bandits.py": "08454f3dfdcca5164a029d07749c17cd384e501cd2f5f5b8a962983acc30a580",
+    "run_experiments.py": "2c6eb6d3b088737bedd57c9ee8f54f236c898a608be6d634cfbf48bb9701f911",
+    "run_exploration.py": "a3fea6b90fa3fbc768ded3cb3042ef9c10c74ef647b7e207bc396c4b23a65e3a"
+  },
+  "conditions": {
+    "informative": {
+      "informative": true,
+      "simulation_seconds": 17.847191315959208
+    },
+    "uninformative": {
+      "informative": false,
+      "simulation_seconds": 26.539181752013974
+    }
+  },
+  "total_seconds": 49.39210750197526,
+  "finished_utc": "2026-09-28T21:29:05.057984+00:00"
+}

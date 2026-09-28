@@ -17,6 +17,12 @@ update and current-reward-inclusive running baseline. It retains the same
 authors' declaration. Our implementation uses stable softmax and vectorized
 categorical sampling, and keeps preferences separate from action-value estimates.
 
+`contextual_bandits.py` extends these attributed epsilon-greedy and gradient
+updates with tables indexed by observed cue and cue-specific reward baselines.
+It retains the authors' declaration. The two-context numerical experiment is
+our original design inspired by Sutton and Barto, second edition, Section 2.9;
+it is not a reproduction of a numerical experiment from the book.
+
 The reference repository's [LICENSE](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction/blob/master/LICENSE)
 is reproduced below for the adapted material:
 

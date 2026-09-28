@@ -145,7 +145,11 @@ def make_seeds(master, experiment_id, methods):
            "gradient eta=0.1 running baseline": 400,
            "gradient eta=0.4 running baseline": 401,
            "gradient eta=0.1 zero baseline": 402,
-           "gradient eta=0.4 zero baseline": 403}
+           "gradient eta=0.4 zero baseline": 403,
+           "context-blind epsilon=0.1 alpha=0.1": 500,
+           "contextual epsilon=0.1 alpha=0.1": 501,
+           "contextual epsilon=0.1 sample average": 502,
+           "contextual gradient eta=0.1": 503}
     return {"environment": environment,
             "agents": {m.name: seed(ids[m.name]) for m in methods}}
 

@@ -43,6 +43,14 @@ sensitivity to a matched +4 reward offset, but does not preserve exploration:
 four tested settings have higher post-change regret than the saved
 constant-alpha epsilon-greedy and textbook UCB baselines.
 
+The [contextual-bandit follow-up](#contextual-bandits-recognizing-the-situation)
+adds Section 2.9: remembering different actions for recurring situations.
+Separate constant-alpha tables improve final reward by **0.4447** when the
+cue identifies the situation, but show no clear late advantage when the cue
+is unrelated. Sample averages benefit from stationary conditional values;
+the gradient learner has the highest mean reward at these tested settings,
+while still concentrating on a suboptimal action in some tasks.
+
 ### Chapter progress
 
 | Chapter 2 topic | What we have implemented and investigated |
@@ -51,6 +59,7 @@ constant-alpha epsilon-greedy and textbook UCB baselines.
 | Section 2.5 | Constant-step estimates; random walks and our drift–noise memory sweep. |
 | Sections 2.6–2.7 | Optimistic initialization and UCB; our permutation and hidden-opportunity comparisons. |
 | Section 2.8 | [Gradient bandits](#gradient-bandits-do-policies-remain-adaptable-after-becoming-confident), softmax preferences, and reward baselines; matched reward offsets and hidden opportunities. |
+| Section 2.9 | [Associative search / contextual bandits](#contextual-bandits-recognizing-the-situation): separate values and policies for observed cues; informative versus unrelated cues. |
 
 ## Run it
 
@@ -85,8 +94,9 @@ available from that choice at time $t$. The agent cannot see this value. Its
 estimate $Q_t(a)$ comes only from rewards it has actually received.
 
 This is a **bandit problem**: each decision selects one reward source, and the
-agent sees only the reward from its chosen action. There is no observed state
-to navigate and no action-dependent transition to a future situation. Choices
+agent sees only the reward from its chosen action. The Section 2.9 extension
+also provides a cue before the choice. There is no action-dependent transition
+to a future situation. Choices
 affect what the agent learns, but the world's values evolve independently of
 those choices. Changing rewards alone do not turn this into a learned world
 model or a full state-based control problem.
@@ -1503,7 +1513,258 @@ and gradient-setting contrasts. [Hidden-improvement results](results/gradient_ba
 and [unchanged results](results/gradient_bandits/unchanged_summary.json) retain
 uncertainty for every reported outcome, beyond the abbreviated tables here.
 
-## Read the code and saved results
+## Contextual bandits: recognizing the situation
+
+**Can context replace repeated relearning?** A single arm can be good in one
+situation and poor in another. This experiment asks whether retaining separate
+experience for recognizable situations helps, and whether the benefit
+disappears when the observed cue conveys no information. It is **our original
+numerical design inspired by Section 2.9, Associative Search**, not a claimed
+textbook figure reproduction.
+
+### Design and algorithms
+
+Each of **2,000 independent tasks** has two fixed vectors of ten action values,
+$q(s,a)\sim N(0,1)$ independently. For each of **5,000 decisions**, the world
+independently draws true context $S_t\in\{0,1\}$ with equal probabilities.
+Reward is $R_t=q(S_t,A_t)+Z_t(A_t)$, with independent standard-normal potential
+noise for each arm. Actions do not affect the next context.
+
+In the **informative** condition, observed cue $C_t=S_t$. In the
+**uninformative** condition, $C_t$ is an independent fair binary draw.
+Both conditions reuse all true reward means, true contexts, potential noise,
+and each method's random stream. Agents receive only the cue and, after
+choosing an action, that action's reward. Hidden contexts and counterfactual
+rewards stay with the evaluator.
+
+| ID | What is stored | Selection and update |
+| --- | --- | --- |
+| M1 | One pooled $Q(a)$ table | Epsilon-greedy, $\epsilon=0.1$, value $\alpha=0.1$; ignores the cue. |
+| M2 | Separate $Q(c,a)$ tables | Epsilon-greedy, $\epsilon=0.1$, value $\alpha=0.1$. |
+| M3 | Separate $Q(c,a)$ and $N(c,a)$ | Epsilon-greedy, $\epsilon=0.1$, sample-average updates. |
+| M4 | Separate preferences $H(c,a)$, baselines $b(c)$, and cue counts $n(c)$ | Softmax sampling, preference $\eta=0.1$, current-inclusive baseline. |
+
+All values and preferences start at zero. Greedy ties break uniformly at
+random. On receiving reward, M2 or M3 updates only the selected cue/action:
+
+$$
+Q(C_t,A_t)\leftarrow Q(C_t,A_t)+\beta\,[R_t-Q(C_t,A_t)],
+\quad \beta=0.1\text{ or }1/N(C_t,A_t),
+$$
+
+where the selected count is incremented first. Returning to a cue retrieves
+its previous estimates; it does not erase what was learned in the other cue.
+M1 performs the same constant-step update in its one pooled table.
+
+M4 samples from stable softmax of the **observed cue's** preferences and caches
+those probabilities. After incrementing that cue's visit count, it updates:
+
+$$
+b(C_t)\leftarrow b(C_t)+\frac{R_t-b(C_t)}{n(C_t)},
+\qquad
+H(C_t,:)\leftarrow H(C_t,:)+0.1\,[R_t-b(C_t)]
+\big(\mathrm{one\_hot}(A_t)-\pi_t\big).
+$$
+
+The baseline includes the current reward and uses **visits to this cue**, not
+global time. The first preference update for each cue is therefore zero.
+The other cue's baseline and preferences stay unchanged. Preferences specify
+relative action probabilities, not expected reward estimates; eta remains
+different from the action-value alpha. There is no extra exploration floor.
+
+This is the association described in [Section 2.9](https://studylib.net/doc/27814306/reinforcement-learning--an-introduction):
+learn which action to select in a recognizable situation while searching
+through reward feedback. The cue is supplied, not inferred by a representation
+learner. There is no learned transition model, prediction of future contexts,
+planning, or delayed consequence of an action. The context-specific reward
+means stay fixed throughout this experiment.
+
+### Two benchmarks answer different questions
+
+The **full-information optimum** for a decision is
+$V_t^{\rm full}=\max_a q(S_t,a)$. It can exploit the true context even when
+that context is hidden from the agent.
+
+For the **optimum given the cue**, first define conditional action values:
+
+$$
+\mu(c,a)=
+\begin{cases}
+q(c,a), & \text{informative cue},\\
+\tfrac12q(0,a)+\tfrac12q(1,a), & \text{uninformative cue}.
+\end{cases}
+\qquad V^{\rm cue}(c)=\max_a\mu(c,a).
+$$
+
+Cue-relative regret is **$V^{\rm cue}(C_t)-\mu(C_t,A_t)$**. Both terms
+condition on the same information. In particular, we do not subtract the
+realized true-context action value from an averaged cue benchmark. Full
+regret is separately recorded as $V_t^{\rm full}-q(S_t,A_t)$.
+
+The expected cost of missing context is zero for informative cues. For an
+unrelated cue it is, per task,
+
+$$
+I=\tfrac12\max_a q(0,a)+\tfrac12\max_a q(1,a)
+ -\max_a\big[\tfrac12q(0,a)+\tfrac12q(1,a)\big]\geq0.
+$$
+
+**Expected full regret = information gap + cue-relative regret**, conditional
+on the cue and chosen action. This decomposition is saved and checked exactly
+up to floating-point error. Realized full regret fluctuates with sampled true
+contexts, so its finite-run average need not equal that sum exactly. The
+benchmarks in the reward plots use the actual sampled context for the full
+optimum, and the conditional mean for the cue optimum.
+
+### Measured rewards and paired comparisons
+
+Primary outcome: mean reward over **decisions $[4000,5000)$**. Brackets are
+95% task-level intervals (mean ± 1.96 SEM). Paired differences subtract each
+task's outcomes first; the sampling units are 2,000 tasks, never individual
+time steps. Intervals are exploratory and unadjusted for multiple comparisons.
+
+| Method | Final reward: informative | Final reward: uninformative |
+| --- | ---: | ---: |
+| M1: pooled alpha | 0.9346 [0.9164, 0.9528] | 0.9346 [0.9164, 0.9528] |
+| M2: cue alpha | 1.3793 [1.3618, 1.3968] | 0.9341 [0.9159, 0.9523] |
+| M3: cue sample averages | 1.3939 [1.3765, 1.4112] | 0.9720 [0.9545, 0.9896] |
+| M4: cue gradient | **1.5320 [1.5134, 1.5506]** | **1.0721 [1.0532, 1.0910]** |
+| Full-information optimum | 1.5562 [1.5378, 1.5745] | 1.5562 [1.5378, 1.5745] |
+| Cue optimum | 1.5562 [1.5378, 1.5745] | 1.0977 [1.0792, 1.1162] |
+
+| Whole-run mean reward, $[0,5000)$ | Informative | Uninformative |
+| --- | ---: | ---: |
+| M1 | 0.9252 [0.9074, 0.9431] | 0.9252 [0.9074, 0.9431] |
+| M2 | 1.3332 [1.3167, 1.3497] | 0.9148 [0.8972, 0.9323] |
+| M3 | 1.3623 [1.3452, 1.3794] | 0.9403 [0.9229, 0.9577] |
+| M4 | 1.4651 [1.4465, 1.4836] | 1.0086 [0.9899, 1.0272] |
+
+![Contextual learning curves and evaluator benchmarks](results/contextual_bandits/learning_curves.png)
+
+**Separating experience helps when the cue is informative.** The controlled
+comparison M2−M1 keeps epsilon and alpha fixed: final reward increases by
+**0.4447 [0.4297, 0.4598]**. With an unrelated cue, the difference is
+**−0.0005 [−0.0034, 0.0024]**, showing no clear late benefit. Over the entire
+uninformative run, splitting is worse by **0.0105 [0.0087, 0.0123]** reward per
+decision. This is consistent with initially dividing useful data between two
+tables that predict the same reward distribution; it is not evidence that
+these finite-sample policies become exactly equivalent.
+
+**Sample averages benefit from stationary conditional values.** M3−M2 adds
+**0.0146 [0.0124, 0.0167]** final reward with informative cues and
+**0.0379 [0.0346, 0.0413]** with unrelated cues. Each observed cue's conditional
+means are stationary in both conditions. With unrelated cues, rewards are a
+stationary mixture: their per-arm variance is
+$1+\tfrac14[q(0,a)-q(1,a)]^2$. A constant step continues responding to that
+noise, whereas a sample average accumulates evidence about the fixed mean.
+There is no drift within a context for forgetting to track here.
+
+**The gradient policy has the highest mean reward among these four settings.**
+M4−M3 adds **0.1381 [0.1350, 0.1413]** with informative cues and
+**0.1001 [0.0969, 0.1033]** with unrelated cues. Its mean final entropy is
+**0.0446 [0.0425, 0.0467]** and **0.0583 [0.0557, 0.0609]** nats respectively,
+versus $\log10\approx2.303$ for a uniform policy. It concentrates choices
+without epsilon-greedy's continuing 10% random-action component. That is a
+plausible contributor to its reward advantage, not an isolated causal test of
+exploration cost. Its final probability of a cue-optimal action averages only
+**87.4%** and **84.0%**: high reward does not mean every learned policy is optimal.
+
+M3 and M4 still beat M1 when cues are uninformative, but that does **not** show
+that arbitrary cues help: those comparisons also change the update or
+selection rule. We did not include pooled sample-average or pooled gradient
+controls. The clean test of cue separation itself is M2 versus M1. Likewise,
+this result does not overturn the earlier hidden-opportunity failure: no
+context's reward means change here after the policy becomes concentrated.
+
+![Paired final-window reward comparisons](results/contextual_bandits/paired_comparisons.png)
+
+### Missing information is different from ineffective learning
+
+Final-window regret per decision:
+
+| Method | Informative: cue = full regret | Uninformative: cue regret | Uninformative: realized full regret |
+| --- | ---: | ---: | ---: |
+| M1 | 0.6204 | 0.1622 | 0.6204 |
+| M2 | 0.1772 | 0.1628 | 0.6212 |
+| M3 | 0.1617 | 0.1246 | 0.5824 |
+| M4 | 0.0243 | 0.0246 | 0.4827 |
+
+The unrelated cue's information gap is **0.4583 [0.4435, 0.4731]** per decision.
+For M4, cue-relative regret is only **0.0246 [0.0226, 0.0266]**; its conditional
+expected full regret is **0.4829**, adding those two components. Most of this
+full-information shortfall comes from information unavailable at decision time.
+No policy based on the unrelated cue and past observations can predict the
+next independently drawn true context. Conversely, informative M1 discards an
+available cue by design, so its shortfall counts as failure to use available
+information, not an unavoidable information gap.
+
+![Separating the information gap from cue-relative regret](results/contextual_bandits/information_gap.png)
+
+### Preselected task 0: association can work without being universal
+
+![Task 0 conditional rewards and choices by observed cue](results/contextual_bandits/task0_by_cue.png)
+
+Task and window were selected before examining results. In this task, the
+best arm is **9 in true context 0** and **3 in true context 1**. M2 and M3
+usually select those different arms when the cue is informative. M1 favors
+arm 3 regardless of cue. When cues are unrelated, the best conditional action
+is arm 3 for either cue, and all methods favor it. M1's underlying actions
+are identical across conditions; its cue-stratified frequencies differ
+slightly because the evaluator groups those actions by different cue draws.
+
+The gradient learner illustrates a limitation despite its best population
+mean: with an informative cue, it selects arm **3** on **98.6%** of cue-0
+decisions in the final window, although arm 9 is better there. The true means
+are **1.266 versus 1.366**, a small but real gap. On cue 1 it selects the
+correct arm 3 on **99.2%** of decisions. Keeping this preselected example
+shows that distinct preference tables allow different policies without
+guaranteeing that both converge to the right action during our horizon.
+
+### Run and inspect this experiment
+
+```bash
+source .venv/bin/activate
+python contextual_checks.py
+python run_contextual_bandits.py
+# Redraw figures using the saved arrays:
+python run_contextual_bandits.py --plot-only
+```
+
+The full run used **80 million learner–environment interactions** and took
+**49.39 seconds** including saving and plotting: **17.85 s** for the informative
+simulation and **26.54 s** for the uninformative one. It used Python **3.10.12**,
+NumPy **1.26.4**, and Matplotlib **3.10.9**. `--output PATH` selects a different
+output directory. No previous study was rerun; SHA-256 checks confirmed all
+**87 earlier result files** stayed unchanged.
+
+[contextual_bandits.py](contextual_bandits.py) implements the agents and world;
+[run_contextual_bandits.py](run_contextual_bandits.py) has the explicit time
+loop, vectorized across tasks; [contextual_figures.py](contextual_figures.py)
+draws the four figures. Brief checks cover cue routing, both value updates,
+cue-specific baseline timing, cached-policy preference updates, world pairing,
+and benchmark conditioning. The full run verifies that M1's all-task action
+hashes and reward summaries match exactly across conditions, and that true
+contexts, noise streams, and reward means match.
+
+[`results/contextual_bandits/`](results/contextual_bandits/) occupies about
+**3.7 MiB**. The two `.npz` files contain `task_windows` with axes **method ×
+window × task × metric**, labeled by names and bounds. **Every window metric
+is a mean per decision**, including regrets; multiply by the window length
+for totals. They also store task benchmarks, information gaps, 50-decision
+plot means/SEMs, true-value tables, task-0 contexts/cues/actions/rewards, and
+final gradient preferences, probabilities, baselines, and cue counts.
+There is no population task-by-time-by-action history.
+
+Each condition's JSON summary reports both reward windows, regret, benchmarks,
+task variability, and every pair of methods. [matched_comparison.json](results/contextual_bandits/matched_comparison.json)
+contains paired informative-minus-uninformative reward effects and the
+matching checks. [manifest.json](results/contextual_bandits/manifest.json)
+records the fixed design, all seeds, source hashes, versions, and runtime.
+Experiment ID **9** and stable method IDs **500–503** introduce separate new
+streams while preserving every existing ID. Environment RNGs for initial
+means, true contexts, unrelated cues, and potential noise are separate from
+learner randomness. Uncertainty always uses tasks, with both cues averaged
+inside each task for final policy summaries.
 
 ## Read the code and saved results
 
@@ -1572,23 +1833,23 @@ world changes independently of the learner's choices.
 
 ## One next scientific question
 
-**Does a longer stable history make gradient learners less able to discover
-the same new opportunity?** Keep the improvement size and 5,000-decision
-post-change horizon fixed, but introduce the opportunity after 500, 5,000, or
-50,000 stable decisions. Measure target probability at the change, censored
-exposure, subsequent selections, and regret, paired with unchanged controls.
-This would test whether time spent concentrating the policy predicts later
-neglect, without adding an exploration mechanism to the textbook algorithm.
-Changing the pre-change duration also changes baseline and preference history;
-it would not isolate entropy alone as the cause.
+**How informative must a noisy cue be to justify separate action-value tables?**
+Keep the same two-context worlds and compare a cue that identifies the true
+context with probability 0.5, 0.6, 0.75, 0.9, or 1.0. Pair the worlds and
+random draws, retain M1 versus M2 as the comparison with identical learning
+rules, and measure whole-run and final reward. Compute each cue benchmark
+from its known reliability, without revealing that reliability to agents.
+This would test the tradeoff between useful context information and splitting
+experience between tables, rather than assuming every supplied cue helps.
 
 ## Reference implementation and license
 
-We consulted Sections 2.6–2.8 of Sutton and Barto's second edition
+We consulted Sections 2.6–2.9 of Sutton and Barto's second edition
 ([book text](https://studylib.net/doc/27814306/reinforcement-learning--an-introduction))
-for optimism, UCB, gradient bandits, and Figures 2.3–2.5. We consulted and adapted the
+for optimism, UCB, gradient bandits, Figures 2.3–2.5, and associative search.
+Our Section 2.9 numerical design is original. We consulted and adapted the
 epsilon-greedy, optimism, UCB, incremental-update, and gradient-bandit design of
 [Shangtong Zhang's Chapter 2 implementation](https://github.com/ShangtongZhang/reinforcement-learning-an-introduction/blob/master/chapter02/ten_armed_testbed.py).
 Its authors' declaration is retained at the top of `bandits.py` and
-`gradient_bandits.py`; the upstream
+`gradient_bandits.py`, and the contextual extension `contextual_bandits.py`; the upstream
 MIT license and attribution are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
